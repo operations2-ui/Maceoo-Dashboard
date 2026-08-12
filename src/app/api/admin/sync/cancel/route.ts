@@ -19,7 +19,7 @@ export async function POST(request: Request) {
 
   const { rowCount } = await pool.query(
     `update sync_runs
-     set cancel_requested = true, status = 'cancelled', finished_at = coalesce(finished_at, now())
+     set cancel_requested = true, status = 'cancelled', finished_at = coalesce(finished_at, now()), current_step = null
      where id = $1 and status = 'running'`,
     [runId],
   );

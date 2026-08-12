@@ -25,19 +25,32 @@ export async function GET(request: Request) {
   const { rows } = await pool.query("insert into sync_runs (status) values ('running') returning id");
   const runId = rows[0].id;
 
+  // Same current_step tracking the manual sync uses, so /admin/sync shows
+  // live progress for a cron-triggered run too, not just manual ones.
+  let progressWrites = Promise.resolve();
+  const onProgress = (message: string) => {
+    progressWrites = progressWrites.then(() =>
+      pool.query("update sync_runs set current_step = $1 where id = $2", [message, runId]).then(
+        () => {},
+        () => {},
+      ),
+    );
+  };
+
   try {
-    const summary = await runSync();
+    const summary = await runSync(onProgress);
+    await progressWrites;
     const status = summary.errors.length > 0 ? "error" : "success";
-    await pool.query("update sync_runs set finished_at = now(), status = $1, summary = $2 where id = $3", [
-      status,
-      JSON.stringify(summary),
-      runId,
-    ]);
+    await pool.query(
+      "update sync_runs set finished_at = now(), status = $1, summary = $2, current_step = null where id = $3",
+      [status, JSON.stringify(summary), runId],
+    );
     return NextResponse.json({ runId, status, summary });
   } catch (e) {
+    await progressWrites;
     const message = e instanceof Error ? e.message : String(e);
     await pool.query(
-      "update sync_runs set finished_at = now(), status = 'error', error_message = $1 where id = $2",
+      "update sync_runs set finished_at = now(), status = 'error', error_message = $1, current_step = null where id = $2",
       [message, runId],
     );
     return NextResponse.json({ error: message }, { status: 500 });

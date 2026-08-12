@@ -33,27 +33,44 @@ export async function POST() {
         return flagRows[0]?.cancel_requested === true;
       };
 
+      // Persist each progress message so it's visible from the Recent Runs
+      // table too, not just to whichever client happened to start this run.
+      // Chained (not awaited inline) so writes stay in order without making
+      // onProgress itself async, and so a slow write never stalls the sync.
+      let progressWrites = Promise.resolve();
+      const onProgress = (message: string) => {
+        send({ type: "progress", message });
+        progressWrites = progressWrites.then(() =>
+          pool.query("update sync_runs set current_step = $1 where id = $2", [message, runId]).then(
+            () => {},
+            () => {},
+          ),
+        );
+      };
+
       try {
-        const summary = await runSync((message) => send({ type: "progress", message }), checkCancelled);
+        const summary = await runSync(onProgress, checkCancelled);
+        await progressWrites;
         const status = summary.errors.length > 0 ? "error" : "success";
         // A cancellation may have raced in between the last checkpoint and
         // here; don't let a late success overwrite it.
         await pool.query(
-          "update sync_runs set finished_at = now(), status = $1, summary = $2 where id = $3 and status <> 'cancelled'",
+          "update sync_runs set finished_at = now(), status = $1, summary = $2, current_step = null where id = $3 and status <> 'cancelled'",
           [status, JSON.stringify(summary), runId],
         );
         send({ type: "done", runId, status, summary });
       } catch (e) {
+        await progressWrites;
         if (e instanceof SyncCancelledError) {
           await pool.query(
-            "update sync_runs set finished_at = now(), status = 'cancelled' where id = $1",
+            "update sync_runs set finished_at = now(), status = 'cancelled', current_step = null where id = $1",
             [runId],
           );
           send({ type: "done", runId, status: "cancelled" });
         } else {
           const message = e instanceof Error ? e.message : String(e);
           await pool.query(
-            "update sync_runs set finished_at = now(), status = 'error', error_message = $1 where id = $2 and status <> 'cancelled'",
+            "update sync_runs set finished_at = now(), status = 'error', error_message = $1, current_step = null where id = $2 and status <> 'cancelled'",
             [message, runId],
           );
           send({ type: "done", runId, status: "error", error: message });

@@ -3,6 +3,7 @@ import { pool } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import SyncNowButton from "@/components/SyncNowButton";
 import CancelRunButton from "@/components/CancelRunButton";
+import LiveRunsRefresher from "@/components/LiveRunsRefresher";
 import DataTable from "@/components/DataTable";
 
 export default async function SyncPage() {
@@ -12,11 +13,12 @@ export default async function SyncPage() {
   const { rows } = await pool.query(
     `select id, to_char(started_at, 'YYYY-MM-DD HH24:MI:SS') as started_at,
             to_char(finished_at, 'YYYY-MM-DD HH24:MI:SS') as finished_at,
-            status, summary, error_message
+            status, summary, error_message, current_step
      from sync_runs
      order by started_at desc
      limit 20`,
   );
+  const hasRunning = rows.some((r) => r.status === "running");
 
   return (
     <div>
@@ -29,6 +31,7 @@ export default async function SyncPage() {
         inventory are kept.
       </p>
       <SyncNowButton />
+      <LiveRunsRefresher active={hasRunning} />
       <h2 className="text-sm font-medium text-slate-700 mb-2">Recent runs</h2>
       <DataTable
         rows={rows}
@@ -37,6 +40,11 @@ export default async function SyncPage() {
           { key: "started_at", header: "Started" },
           { key: "finished_at", header: "Finished" },
           { key: "status", header: "Status" },
+          {
+            key: "current_step",
+            header: "Current step",
+            render: (r) => (r.status === "running" ? (r.current_step ?? "Starting…") : "—"),
+          },
           {
             key: "action",
             header: "",
