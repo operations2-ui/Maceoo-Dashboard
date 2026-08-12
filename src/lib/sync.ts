@@ -64,9 +64,18 @@ async function getStoresAndAliases(): Promise<{ stores: StoreRef[]; aliases: Sto
   return { stores, aliases };
 }
 
+// googleapis/gaxios has no default request timeout, so a stalled connection
+// to Google's API would otherwise hang the whole sync indefinitely — not
+// just failing to progress, but making it uncancellable too, since the
+// cancellation check only runs between requests, never during one.
+const GOOGLE_REQUEST_TIMEOUT_MS = 30_000;
+
 async function downloadDriveFileText(fileId: string): Promise<string> {
   const drive = getDriveClient();
-  const res = await drive.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" });
+  const res = await drive.files.get(
+    { fileId, alt: "media" },
+    { responseType: "arraybuffer", timeout: GOOGLE_REQUEST_TIMEOUT_MS },
+  );
   return Buffer.from(res.data as ArrayBuffer).toString("utf-8");
 }
 
@@ -86,13 +95,16 @@ async function syncInventoryFromDrive(
   // Store folders aren't necessarily collected under one dedicated parent —
   // when no DRIVE_ROOT_FOLDER_ID is configured, discover them by what's been
   // shared directly with the service account instead.
-  const foldersRes = await drive.files.list({
-    q: rootFolderId
-      ? `'${rootFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
-      : `sharedWithMe = true and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-    fields: "files(id, name)",
-    pageSize: 200,
-  });
+  const foldersRes = await drive.files.list(
+    {
+      q: rootFolderId
+        ? `'${rootFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
+        : `sharedWithMe = true and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      fields: "files(id, name)",
+      pageSize: 200,
+    },
+    { timeout: GOOGLE_REQUEST_TIMEOUT_MS },
+  );
 
   for (const folder of foldersRes.data.files ?? []) {
     await throwIfCancelled(checkCancelled);
@@ -117,13 +129,17 @@ async function syncInventoryFromDrive(
     // a store with no rows synced yet.
     const skipAtOrBefore = maxDate && maxDate > cutoff ? maxDate : cutoff;
 
-    const filesRes = await drive.files.list({
-      q: `'${folder.id}' in parents and trashed = false and (name contains '.csv' or mimeType = 'text/csv')`,
-      fields: "files(id, name)",
-      pageSize: 500,
-    });
+    const filesRes = await drive.files.list(
+      {
+        q: `'${folder.id}' in parents and trashed = false and (name contains '.csv' or mimeType = 'text/csv')`,
+        fields: "files(id, name)",
+        pageSize: 500,
+      },
+      { timeout: GOOGLE_REQUEST_TIMEOUT_MS },
+    );
 
     for (const file of filesRes.data.files ?? []) {
+      await throwIfCancelled(checkCancelled);
       if (!file.id || !file.name) continue;
       try {
         // Cheap skip via the filename-derived date before paying for a Drive
@@ -328,7 +344,10 @@ async function syncDiscountsFromSheet(
   aliases: StoreAlias[],
 ): Promise<SyncSummary["discounts"]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId: sheetId, range });
+  const res = await sheets.spreadsheets.values.get(
+    { spreadsheetId: sheetId, range },
+    { timeout: GOOGLE_REQUEST_TIMEOUT_MS },
+  );
   const csv = rowsToCsv((res.data.values ?? []) as string[][]);
   const rows = parseDiscountsCsv(csv);
 
@@ -372,7 +391,10 @@ async function syncSalesFromSheet(
   aliases: StoreAlias[],
 ): Promise<SyncSummary["sales"]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId: sheetId, range });
+  const res = await sheets.spreadsheets.values.get(
+    { spreadsheetId: sheetId, range },
+    { timeout: GOOGLE_REQUEST_TIMEOUT_MS },
+  );
   const csv = rowsToCsv((res.data.values ?? []) as string[][]);
   const rows = parseSalesCsv(csv);
 
