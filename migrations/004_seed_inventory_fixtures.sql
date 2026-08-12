@@ -1,0 +1,22 @@
+insert into inventory_snapshots (store_id, snapshot_date, sku, style_code, size_code, description, vendor, on_hand) values
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-06','100000071063','10000007106','3','Women''s Shoes : Suit Up - Various One Size','Rabfit',2),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-06','100000072005','10000007200','5','Women''s Top : Basic Tee - Size 5','Acme',3),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-06','100000072006','10000007200','6','Women''s Top : Basic Tee - Size 6','Acme',-1),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-06','100000072007','10000007200','7','Women''s Top : Basic Tee - Size 7','Acme',2),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-06','100000073001','10000007300','1','Women''s Dress : Wrap - Size 1','Rabfit',0),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-06','100000074005','10000007400','5','Women''s Shoe Flat Pin White 5 / White','Rabfit',0),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-06','100000074006','10000007400','6','Women''s Shoe Flat Pin White 6 / White','Rabfit',0),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-06','100000074008','10000007400','8','Women''s Shoe Flat Pin White 8 / White','Rabfit',0),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-06','100000074009','10000007400','9','Women''s Shoe Flat Pin White 9 / White','Rabfit',0),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-06','1000000740010','10000007400','10','Women''s Shoe Flat Pin White 10 / White','Rabfit',0),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-07','100000071063','10000007106','3','Women''s Shoes : Suit Up - Various One Size','Rabfit',1),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-07','100000072005','10000007200','5','Women''s Top : Basic Tee - Size 5','Acme',1),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-07','100000072006','10000007200','6','Women''s Top : Basic Tee - Size 6','Acme',-3),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-07','100000072007','10000007200','7','Women''s Top : Basic Tee - Size 7','Acme',2),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-07','100000073001','10000007300','1','Women''s Dress : Wrap - Size 1','Rabfit',-3),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-07','100000074005','10000007400','5','Women''s Shoe Flat Pin White 5 / White','Rabfit',0),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-07','100000074006','10000007400','6','Women''s Shoe Flat Pin White 6 / White','Rabfit',0),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-07','100000074008','10000007400','8','Women''s Shoe Flat Pin White 8 / White','Rabfit',0),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-07','100000074009','10000007400','9','Women''s Shoe Flat Pin White 9 / White','Rabfit',0),
+('ab7ae5af-0395-4828-8696-55162dd0dca1','2026-08-07','1000000740010','10000007400','10','Women''s Shoe Flat Pin White 10 / White','Rabfit',0)
+on conflict (store_id, snapshot_date, sku) do update set on_hand = excluded.on_hand;

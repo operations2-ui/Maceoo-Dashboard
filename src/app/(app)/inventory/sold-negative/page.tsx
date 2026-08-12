@@ -1,0 +1,36 @@
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { getAccessibleStores, hasStoreAccess } from "@/lib/authz";
+import { getSoldNegative } from "@/lib/reports";
+import { StoreDateFilter } from "@/components/FilterForm";
+import SoldNegativeTable from "@/components/tables/SoldNegativeTable";
+import DownloadCsvLink from "@/components/DownloadCsvLink";
+
+export default async function SoldNegativePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ store?: string; date?: string }>;
+}) {
+  const { store, date } = await searchParams;
+  const user = await getCurrentUser();
+  const stores = await getAccessibleStores(user);
+  const storeId = store ?? stores[0]?.id;
+  const snapshotDate = date ?? new Date().toISOString().slice(0, 10);
+
+  const rows = storeId && (await hasStoreAccess(user, storeId)) ? await getSoldNegative(storeId, snapshotDate) : [];
+
+  return (
+    <div>
+      <h1 className="text-xl font-semibold text-slate-900 mb-1">Prior-Day Oversell</h1>
+      <p className="text-sm text-slate-500 mb-4">
+        SKUs where today&apos;s closing stock is negative and lower than yesterday&apos;s closing stock.
+      </p>
+      <StoreDateFilter stores={stores} store={storeId} date={snapshotDate} />
+      {rows.length > 0 && storeId && (
+        <div className="flex justify-end mb-2">
+          <DownloadCsvLink href={`/api/export/inventory-sold-negative?store=${storeId}&date=${snapshotDate}`} />
+        </div>
+      )}
+      <SoldNegativeTable rows={rows} />
+    </div>
+  );
+}

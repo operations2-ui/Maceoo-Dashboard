@@ -1,0 +1,5 @@
+Location Name,DAY Order Date,Total orders,Total gross sales,Total discounts,Total refunds,Total net sales,Total taxes,Total shipping,Total sales,Total cost of goods sold,Total gross margin
+Paris Store,2026-08-06,12,2400.00,57.50,0,2342.50,187.40,0,2529.90,900.00,1442.50
+,2026-08-07,10,2000.00,40.00,0,1960.00,150.00,0,2110.00,800.00,1160.00
+ARLV Store,2026-08-06,5,900.00,9.99,20.00,870.01,69.60,0,939.61,300.00,570.01
+BAAC Store,2026-08-08,0,$0.00,$0.00,$798.88,-$798.88,-$70.91,$0.00,-$869.79,-$229.77,-$569.11

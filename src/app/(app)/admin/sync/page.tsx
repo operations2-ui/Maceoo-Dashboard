@@ -1,0 +1,46 @@
+import { redirect } from "next/navigation";
+import { pool } from "@/lib/db";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import SyncNowButton from "@/components/SyncNowButton";
+import DataTable from "@/components/DataTable";
+
+export default async function SyncPage() {
+  const user = await getCurrentUser();
+  if (user?.role !== "admin") redirect("/");
+
+  const { rows } = await pool.query(
+    `select id, to_char(started_at, 'YYYY-MM-DD HH24:MI:SS') as started_at,
+            to_char(finished_at, 'YYYY-MM-DD HH24:MI:SS') as finished_at,
+            status, summary, error_message
+     from sync_runs
+     order by started_at desc
+     limit 20`,
+  );
+
+  return (
+    <div>
+      <h1 className="text-xl font-semibold text-slate-900 mb-1">Drive/Sheets Sync</h1>
+      <p className="text-sm text-slate-500 mb-4">
+        Pulls the latest inventory CSVs from Drive and the Discounts/Sales Google Sheets directly, using the
+        configured service account. Requires <code>DRIVE_ROOT_FOLDER_ID</code>, <code>DISCOUNTS_SHEET_ID</code>,
+        and <code>SALES_SHEET_ID</code> to be set.
+      </p>
+      <SyncNowButton />
+      <h2 className="text-sm font-medium text-slate-700 mb-2">Recent runs</h2>
+      <DataTable
+        rows={rows}
+        emptyMessage="No sync runs yet."
+        columns={[
+          { key: "started_at", header: "Started" },
+          { key: "finished_at", header: "Finished" },
+          { key: "status", header: "Status" },
+          {
+            key: "errors",
+            header: "Errors",
+            render: (r) => (r.summary?.errors?.length ? r.summary.errors.join("; ") : r.error_message ?? "—"),
+          },
+        ]}
+      />
+    </div>
+  );
+}
