@@ -3,6 +3,10 @@ import { pool } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { runSync } from "@/lib/sync";
 
+// Google Sheets fetch + batched DB writes to a remote host can take longer
+// than Vercel's 10s default function timeout; extend it explicitly.
+export const maxDuration = 60;
+
 export async function POST() {
   const auth = await requireAdmin();
   if (!auth.ok) return NextResponse.json({ error: auth.message }, { status: auth.status });

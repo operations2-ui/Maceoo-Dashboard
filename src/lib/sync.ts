@@ -200,6 +200,52 @@ async function syncInventoryFromLocalFolder(
   return { inventory, inventoryUnmatchedFolders, inventoryErrors };
 }
 
+/**
+ * Builds a single batched `INSERT ... VALUES (...),(...),... ON CONFLICT DO
+ * UPDATE` statement for a chunk of rows. One-row-per-await was fine against
+ * local Postgres but far too slow once the DB is on a remote host (RDS) â€”
+ * thousands of sequential round trips can blow past a serverless function's
+ * execution time limit. Batching turns that into a handful of round trips.
+ */
+function buildBatchUpsertQuery(
+  table: string,
+  columns: string[],
+  conflictColumns: string[],
+  updateColumns: string[],
+  rows: unknown[][],
+): { text: string; values: unknown[] } {
+  const values: unknown[] = [];
+  const valueGroups = rows.map((row, rowIdx) => {
+    const placeholders = row.map((_, colIdx) => `$${rowIdx * columns.length + colIdx + 1}`);
+    values.push(...row);
+    return `(${placeholders.join(", ")})`;
+  });
+  const updateClause = updateColumns.map((c) => `${c} = excluded.${c}`).join(", ");
+  const text = `
+    insert into ${table} (${columns.join(", ")})
+    values ${valueGroups.join(", ")}
+    on conflict (${conflictColumns.join(", ")})
+    do update set ${updateClause}
+  `;
+  return { text, values };
+}
+
+async function batchUpsert(
+  client: import("pg").PoolClient,
+  table: string,
+  columns: string[],
+  conflictColumns: string[],
+  updateColumns: string[],
+  allRows: unknown[][],
+  batchSize = 500,
+): Promise<void> {
+  for (let i = 0; i < allRows.length; i += batchSize) {
+    const chunk = allRows.slice(i, i + batchSize);
+    const { text, values } = buildBatchUpsertQuery(table, columns, conflictColumns, updateColumns, chunk);
+    await client.query(text, values);
+  }
+}
+
 async function syncDiscountsFromSheet(
   sheetId: string,
   range: string,
@@ -212,26 +258,27 @@ async function syncDiscountsFromSheet(
   const rows = parseDiscountsCsv(csv);
 
   const unmatched = new Set<string>();
-  let imported = 0;
+  const matchedRows: unknown[][] = [];
+  for (const r of rows) {
+    const storeId = resolveStoreId(r.locationName, stores, aliases, "sheet");
+    if (!storeId) {
+      unmatched.add(r.locationName);
+      continue;
+    }
+    matchedRows.push([storeId, r.dayDate, r.userName, r.discountName, r.totalDiscounts, r.orderId, r.posFlag, r.totalOrders]);
+  }
+
   const client = await pool.connect();
   try {
     await client.query("begin");
-    for (const r of rows) {
-      const storeId = resolveStoreId(r.locationName, stores, aliases, "sheet");
-      if (!storeId) {
-        unmatched.add(r.locationName);
-        continue;
-      }
-      await client.query(
-        `insert into discounts (store_id, day_date, user_name, discount_name, total_discounts, order_id, pos_flag, total_orders)
-         values ($1, $2, $3, $4, $5, $6, $7, $8)
-         on conflict (store_id, day_date, order_id, discount_name)
-         do update set user_name = excluded.user_name, total_discounts = excluded.total_discounts,
-                        pos_flag = excluded.pos_flag, total_orders = excluded.total_orders`,
-        [storeId, r.dayDate, r.userName, r.discountName, r.totalDiscounts, r.orderId, r.posFlag, r.totalOrders],
-      );
-      imported++;
-    }
+    await batchUpsert(
+      client,
+      "discounts",
+      ["store_id", "day_date", "user_name", "discount_name", "total_discounts", "order_id", "pos_flag", "total_orders"],
+      ["store_id", "day_date", "order_id", "discount_name"],
+      ["user_name", "total_discounts", "pos_flag", "total_orders"],
+      matchedRows,
+    );
     await client.query("commit");
   } catch (e) {
     await client.query("rollback");
@@ -240,7 +287,7 @@ async function syncDiscountsFromSheet(
     client.release();
   }
 
-  return { imported, skipped: rows.length - imported, unmatchedLocations: [...unmatched] };
+  return { imported: matchedRows.length, skipped: rows.length - matchedRows.length, unmatchedLocations: [...unmatched] };
 }
 
 async function syncSalesFromSheet(
@@ -255,42 +302,46 @@ async function syncSalesFromSheet(
   const rows = parseSalesCsv(csv);
 
   const unmatched = new Set<string>();
-  let imported = 0;
+  const matchedRows: unknown[][] = [];
+  for (const r of rows) {
+    const storeId = resolveStoreId(r.locationName, stores, aliases, "sheet");
+    if (!storeId) {
+      unmatched.add(r.locationName);
+      continue;
+    }
+    matchedRows.push([
+      storeId,
+      r.orderDate,
+      r.totalOrders,
+      r.grossSales,
+      r.discounts,
+      r.refunds,
+      r.netSales,
+      r.taxes,
+      r.shipping,
+      r.totalSales,
+      r.cogs,
+      r.grossMargin,
+    ]);
+  }
+
   const client = await pool.connect();
   try {
     await client.query("begin");
-    for (const r of rows) {
-      const storeId = resolveStoreId(r.locationName, stores, aliases, "sheet");
-      if (!storeId) {
-        unmatched.add(r.locationName);
-        continue;
-      }
-      await client.query(
-        `insert into sales_daily
-           (store_id, order_date, total_orders, gross_sales, discounts, refunds, net_sales, taxes, shipping, total_sales, cogs, gross_margin)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-         on conflict (store_id, order_date)
-         do update set total_orders = excluded.total_orders, gross_sales = excluded.gross_sales,
-                        discounts = excluded.discounts, refunds = excluded.refunds, net_sales = excluded.net_sales,
-                        taxes = excluded.taxes, shipping = excluded.shipping, total_sales = excluded.total_sales,
-                        cogs = excluded.cogs, gross_margin = excluded.gross_margin`,
-        [
-          storeId,
-          r.orderDate,
-          r.totalOrders,
-          r.grossSales,
-          r.discounts,
-          r.refunds,
-          r.netSales,
-          r.taxes,
-          r.shipping,
-          r.totalSales,
-          r.cogs,
-          r.grossMargin,
-        ],
-      );
-      imported++;
-    }
+    await batchUpsert(
+      client,
+      "sales_daily",
+      [
+        "store_id", "order_date", "total_orders", "gross_sales", "discounts", "refunds",
+        "net_sales", "taxes", "shipping", "total_sales", "cogs", "gross_margin",
+      ],
+      ["store_id", "order_date"],
+      [
+        "total_orders", "gross_sales", "discounts", "refunds", "net_sales",
+        "taxes", "shipping", "total_sales", "cogs", "gross_margin",
+      ],
+      matchedRows,
+    );
     await client.query("commit");
   } catch (e) {
     await client.query("rollback");
@@ -299,7 +350,7 @@ async function syncSalesFromSheet(
     client.release();
   }
 
-  return { imported, skipped: rows.length - imported, unmatchedLocations: [...unmatched] };
+  return { imported: matchedRows.length, skipped: rows.length - matchedRows.length, unmatchedLocations: [...unmatched] };
 }
 
 export async function runSync(): Promise<SyncSummary> {

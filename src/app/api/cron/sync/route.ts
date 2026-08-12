@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { runSync } from "@/lib/sync";
 
+// Google Sheets fetch + batched DB writes to a remote host can take longer
+// than Vercel's 10s default function timeout; extend it explicitly.
+export const maxDuration = 60;
+
 /**
  * Sync endpoint for Vercel Cron (see vercel.json). Not gated by a user
  * session — Cron has none — but requires a shared secret instead, since this
