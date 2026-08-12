@@ -9,6 +9,9 @@ import { resolveStoreId, type StoreRef, type StoreAlias } from "./store-resolver
 import { rowsToCsv } from "./csv-utils";
 import { parseFlexibleDate } from "./date-utils";
 
+export type SyncProgress = (message: string) => void;
+const noopProgress: SyncProgress = () => {};
+
 export interface SyncSummary {
   inventory: { folder: string; store: string; file: string; imported: number }[];
   inventoryUnmatchedFolders: string[];
@@ -56,6 +59,7 @@ async function syncInventoryFromDrive(
   rootFolderId: string | null,
   stores: StoreRef[],
   aliases: StoreAlias[],
+  onProgress: SyncProgress = noopProgress,
 ): Promise<Pick<SyncSummary, "inventory" | "inventoryUnmatchedFolders" | "inventoryErrors">> {
   const drive = getDriveClient();
   const inventory: SyncSummary["inventory"] = [];
@@ -82,6 +86,7 @@ async function syncInventoryFromDrive(
       continue;
     }
     const store = stores.find((s) => s.id === storeId)!;
+    onProgress(`Inventory: checking ${store.name}`);
 
     // Cast to text in SQL rather than converting the returned Date object in
     // JS: node-postgres parses DATE columns as local-midnight Date objects,
@@ -123,6 +128,7 @@ async function syncInventoryFromDrive(
         }
         if (snapshotDate <= skipAtOrBefore) continue;
 
+        onProgress(`Inventory: importing ${store.name} — ${file.name}`);
         const rows = parseInventoryCsv(text);
         const client = await pool.connect();
         try {
@@ -169,6 +175,7 @@ async function syncInventoryFromLocalFolder(
   rootPath: string,
   stores: StoreRef[],
   aliases: StoreAlias[],
+  onProgress: SyncProgress = noopProgress,
 ): Promise<Pick<SyncSummary, "inventory" | "inventoryUnmatchedFolders" | "inventoryErrors">> {
   const inventory: SyncSummary["inventory"] = [];
   const inventoryUnmatchedFolders: string[] = [];
@@ -184,6 +191,7 @@ async function syncInventoryFromLocalFolder(
       continue;
     }
     const store = stores.find((s) => s.id === storeId)!;
+    onProgress(`Inventory: checking ${store.name}`);
 
     // Cast to text in SQL rather than converting the returned Date object in JS:
     // node-postgres parses DATE columns as local-midnight Date objects, and a
@@ -220,6 +228,7 @@ async function syncInventoryFromLocalFolder(
         }
         if (snapshotDate <= skipAtOrBefore) continue;
 
+        onProgress(`Inventory: importing ${store.name} — ${file}`);
         const rows = parseInventoryCsv(text);
         const client = await pool.connect();
         try {
@@ -406,8 +415,9 @@ async function syncSalesFromSheet(
   return { imported: matchedRows.length, skipped: rows.length - matchedRows.length, unmatchedLocations: [...unmatched] };
 }
 
-export async function runSync(): Promise<SyncSummary> {
+export async function runSync(onProgress: SyncProgress = noopProgress): Promise<SyncSummary> {
   const errors: string[] = [];
+  onProgress("Loading stores");
   const { stores, aliases } = await getStoresAndAliases();
 
   let inventoryResult: Pick<SyncSummary, "inventory" | "inventoryUnmatchedFolders" | "inventoryErrors"> = {
@@ -419,7 +429,7 @@ export async function runSync(): Promise<SyncSummary> {
   const rootFolderId = process.env.DRIVE_ROOT_FOLDER_ID || null;
   if (localRoot) {
     try {
-      inventoryResult = await syncInventoryFromLocalFolder(localRoot, stores, aliases);
+      inventoryResult = await syncInventoryFromLocalFolder(localRoot, stores, aliases, onProgress);
     } catch (e) {
       errors.push(`Inventory sync failed: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -427,12 +437,13 @@ export async function runSync(): Promise<SyncSummary> {
     // No DRIVE_ROOT_FOLDER_ID is fine — syncInventoryFromDrive falls back to
     // whatever folders are shared directly with the service account.
     try {
-      inventoryResult = await syncInventoryFromDrive(rootFolderId, stores, aliases);
+      inventoryResult = await syncInventoryFromDrive(rootFolderId, stores, aliases, onProgress);
     } catch (e) {
       errors.push(`Inventory sync failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
+  onProgress("Pruning inventory older than 30 days");
   let inventoryPruned = 0;
   try {
     inventoryPruned = await pruneOldInventorySnapshots();
@@ -443,6 +454,7 @@ export async function runSync(): Promise<SyncSummary> {
   let discounts: SyncSummary["discounts"] = null;
   const discountsSheetId = process.env.DISCOUNTS_SHEET_ID;
   if (discountsSheetId) {
+    onProgress("Syncing discounts");
     try {
       discounts = await syncDiscountsFromSheet(
         discountsSheetId,
@@ -460,6 +472,7 @@ export async function runSync(): Promise<SyncSummary> {
   let sales: SyncSummary["sales"] = null;
   const salesSheetId = process.env.SALES_SHEET_ID;
   if (salesSheetId) {
+    onProgress("Syncing sales");
     try {
       sales = await syncSalesFromSheet(salesSheetId, process.env.SALES_SHEET_RANGE || "A:Z", stores, aliases);
     } catch (e) {
@@ -469,5 +482,6 @@ export async function runSync(): Promise<SyncSummary> {
     errors.push("SALES_SHEET_ID is not set; skipped sales sync");
   }
 
+  onProgress("Finishing up");
   return { ...inventoryResult, inventoryPruned, discounts, sales, errors };
 }
