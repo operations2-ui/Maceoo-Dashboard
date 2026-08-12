@@ -35,6 +35,11 @@ export default async function SyncPage() {
           { key: "finished_at", header: "Finished" },
           { key: "status", header: "Status" },
           {
+            key: "pruned",
+            header: "Pruned (>30d)",
+            render: (r) => r.summary?.inventoryPruned ?? "—",
+          },
+          {
             key: "errors",
             header: "Errors",
             render: (r) => (r.summary?.errors?.length ? r.summary.errors.join("; ") : r.error_message ?? "—"),

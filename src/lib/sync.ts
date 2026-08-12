@@ -13,9 +13,29 @@ export interface SyncSummary {
   inventory: { folder: string; store: string; file: string; imported: number }[];
   inventoryUnmatchedFolders: string[];
   inventoryErrors: { file: string; error: string }[];
+  inventoryPruned: number;
   discounts: { imported: number; skipped: number; unmatchedLocations: string[] } | null;
   sales: { imported: number; skipped: number; unmatchedLocations: string[] } | null;
   errors: string[];
+}
+
+// The dashboard only ever shows the last 30 days of inventory, so there's no
+// reason to import or retain snapshots older than that.
+const INVENTORY_RETENTION_DAYS = 30;
+
+function inventoryRetentionCutoff(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - INVENTORY_RETENTION_DAYS);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Deletes inventory_snapshots rows older than the retention window. Returns the number of rows removed. */
+async function pruneOldInventorySnapshots(): Promise<number> {
+  const { rowCount } = await pool.query(
+    "delete from inventory_snapshots where snapshot_date < (current_date - ($1 || ' days')::interval)",
+    [INVENTORY_RETENTION_DAYS],
+  );
+  return rowCount ?? 0;
 }
 
 async function getStoresAndAliases(): Promise<{ stores: StoreRef[]; aliases: StoreAlias[] }> {
@@ -41,6 +61,7 @@ async function syncInventoryFromDrive(
   const inventory: SyncSummary["inventory"] = [];
   const inventoryUnmatchedFolders: string[] = [];
   const inventoryErrors: SyncSummary["inventoryErrors"] = [];
+  const cutoff = inventoryRetentionCutoff();
 
   const foldersRes = await drive.files.list({
     q: `'${rootFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
@@ -57,6 +78,18 @@ async function syncInventoryFromDrive(
     }
     const store = stores.find((s) => s.id === storeId)!;
 
+    // Cast to text in SQL rather than converting the returned Date object in
+    // JS: node-postgres parses DATE columns as local-midnight Date objects,
+    // and a naive .toISOString() shifts them back a day for positive UTC offsets.
+    const { rows: maxRows } = await pool.query(
+      "select to_char(max(snapshot_date), 'YYYY-MM-DD') as max_date from inventory_snapshots where store_id = $1",
+      [storeId],
+    );
+    const maxDate: string | null = maxRows[0]?.max_date ?? null;
+    // Never bother looking further back than the retention window, even for
+    // a store with no rows synced yet.
+    const skipAtOrBefore = maxDate && maxDate > cutoff ? maxDate : cutoff;
+
     const filesRes = await drive.files.list({
       q: `'${folder.id}' in parents and trashed = false and (name contains '.csv' or mimeType = 'text/csv')`,
       fields: "files(id, name)",
@@ -66,6 +99,16 @@ async function syncInventoryFromDrive(
     for (const file of filesRes.data.files ?? []) {
       if (!file.id || !file.name) continue;
       try {
+        // Cheap skip via the filename-derived date before paying for a Drive
+        // download on files we already have or don't need (older than the
+        // retention window).
+        try {
+          const filenameDate = dateFromFilename(file.name);
+          if (filenameDate <= skipAtOrBefore) continue;
+        } catch {
+          // filename doesn't carry a date; fall through to reading the file
+        }
+
         const text = await downloadDriveFileText(file.id);
         const asOfMatch = text.match(/As of\s+(.+)/i);
         const snapshotDate = asOfMatch ? parseFlexibleDate(asOfMatch[1]) : null;
@@ -73,6 +116,7 @@ async function syncInventoryFromDrive(
           inventoryErrors.push({ file: `${folder.name}/${file.name}`, error: 'No "As of <date>" line found' });
           continue;
         }
+        if (snapshotDate <= skipAtOrBefore) continue;
 
         const rows = parseInventoryCsv(text);
         const client = await pool.connect();
@@ -124,6 +168,7 @@ async function syncInventoryFromLocalFolder(
   const inventory: SyncSummary["inventory"] = [];
   const inventoryUnmatchedFolders: string[] = [];
   const inventoryErrors: SyncSummary["inventoryErrors"] = [];
+  const cutoff = inventoryRetentionCutoff();
 
   const folders = readdirSync(rootPath, { withFileTypes: true }).filter((d) => d.isDirectory());
 
@@ -143,6 +188,9 @@ async function syncInventoryFromLocalFolder(
       [storeId],
     );
     const maxDate: string | null = maxRows[0]?.max_date ?? null;
+    // Never bother looking further back than the retention window, even for
+    // a store with no rows synced yet.
+    const skipAtOrBefore = maxDate && maxDate > cutoff ? maxDate : cutoff;
 
     const folderPath = join(rootPath, folder.name);
     const files = readdirSync(folderPath).filter((f) => f.endsWith(".csv"));
@@ -153,7 +201,7 @@ async function syncInventoryFromLocalFolder(
         // file read on files we already have (some of these files are large).
         try {
           const filenameDate = dateFromFilename(file);
-          if (maxDate && filenameDate <= maxDate) continue;
+          if (filenameDate <= skipAtOrBefore) continue;
         } catch {
           // filename doesn't carry a date; fall through to reading the file
         }
@@ -165,7 +213,7 @@ async function syncInventoryFromLocalFolder(
           inventoryErrors.push({ file: `${folder.name}/${file}`, error: 'No "As of <date>" line found' });
           continue;
         }
-        if (maxDate && snapshotDate <= maxDate) continue;
+        if (snapshotDate <= skipAtOrBefore) continue;
 
         const rows = parseInventoryCsv(text);
         const client = await pool.connect();
@@ -380,6 +428,13 @@ export async function runSync(): Promise<SyncSummary> {
     errors.push("Neither LOCAL_INVENTORY_ROOT_PATH nor DRIVE_ROOT_FOLDER_ID is set; skipped inventory sync");
   }
 
+  let inventoryPruned = 0;
+  try {
+    inventoryPruned = await pruneOldInventorySnapshots();
+  } catch (e) {
+    errors.push(`Inventory pruning failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
   let discounts: SyncSummary["discounts"] = null;
   const discountsSheetId = process.env.DISCOUNTS_SHEET_ID;
   if (discountsSheetId) {
@@ -409,5 +464,5 @@ export async function runSync(): Promise<SyncSummary> {
     errors.push("SALES_SHEET_ID is not set; skipped sales sync");
   }
 
-  return { ...inventoryResult, discounts, sales, errors };
+  return { ...inventoryResult, inventoryPruned, discounts, sales, errors };
 }

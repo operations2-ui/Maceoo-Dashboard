@@ -4,6 +4,7 @@ import { getSales } from "@/lib/reports";
 import { StoreDateRangeFilter } from "@/components/FilterForm";
 import SalesTable from "@/components/tables/SalesTable";
 import SalesTrendChart from "@/components/SalesTrendChart";
+import StoreSalesChart from "@/components/StoreSalesChart";
 import DownloadCsvLink from "@/components/DownloadCsvLink";
 
 const money = (n: number | string | null) =>
@@ -42,16 +43,6 @@ export default async function SalesPage({
     { orders: 0, netSales: 0, grossMargin: 0 },
   );
 
-  const chartData = Object.values(
-    rows.reduce<Record<string, { date: string; netSales: number; orders: number }>>((acc, r) => {
-      const key = r.order_date;
-      if (!acc[key]) acc[key] = { date: key, netSales: 0, orders: 0 };
-      acc[key].netSales += Number(r.net_sales ?? 0);
-      acc[key].orders += r.total_orders ?? 0;
-      return acc;
-    }, {}),
-  );
-
   return (
     <div>
       <h1 className="text-xl font-semibold text-slate-900 mb-1">Sales</h1>
@@ -83,7 +74,8 @@ export default async function SalesPage({
         </div>
       </div>
 
-      <SalesTrendChart data={chartData} />
+      <SalesTrendChart rows={rows} />
+      <StoreSalesChart rows={rows} />
 
       <SalesTable rows={rows} />
     </div>
