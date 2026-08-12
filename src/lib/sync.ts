@@ -53,7 +53,7 @@ async function downloadDriveFileText(fileId: string): Promise<string> {
 }
 
 async function syncInventoryFromDrive(
-  rootFolderId: string,
+  rootFolderId: string | null,
   stores: StoreRef[],
   aliases: StoreAlias[],
 ): Promise<Pick<SyncSummary, "inventory" | "inventoryUnmatchedFolders" | "inventoryErrors">> {
@@ -63,8 +63,13 @@ async function syncInventoryFromDrive(
   const inventoryErrors: SyncSummary["inventoryErrors"] = [];
   const cutoff = inventoryRetentionCutoff();
 
+  // Store folders aren't necessarily collected under one dedicated parent —
+  // when no DRIVE_ROOT_FOLDER_ID is configured, discover them by what's been
+  // shared directly with the service account instead.
   const foldersRes = await drive.files.list({
-    q: `'${rootFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+    q: rootFolderId
+      ? `'${rootFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
+      : `sharedWithMe = true and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
     fields: "files(id, name)",
     pageSize: 200,
   });
@@ -411,21 +416,21 @@ export async function runSync(): Promise<SyncSummary> {
     inventoryErrors: [],
   };
   const localRoot = process.env.LOCAL_INVENTORY_ROOT_PATH;
-  const rootFolderId = process.env.DRIVE_ROOT_FOLDER_ID;
+  const rootFolderId = process.env.DRIVE_ROOT_FOLDER_ID || null;
   if (localRoot) {
     try {
       inventoryResult = await syncInventoryFromLocalFolder(localRoot, stores, aliases);
     } catch (e) {
       errors.push(`Inventory sync failed: ${e instanceof Error ? e.message : String(e)}`);
     }
-  } else if (rootFolderId) {
+  } else {
+    // No DRIVE_ROOT_FOLDER_ID is fine — syncInventoryFromDrive falls back to
+    // whatever folders are shared directly with the service account.
     try {
       inventoryResult = await syncInventoryFromDrive(rootFolderId, stores, aliases);
     } catch (e) {
       errors.push(`Inventory sync failed: ${e instanceof Error ? e.message : String(e)}`);
     }
-  } else {
-    errors.push("Neither LOCAL_INVENTORY_ROOT_PATH nor DRIVE_ROOT_FOLDER_ID is set; skipped inventory sync");
   }
 
   let inventoryPruned = 0;
