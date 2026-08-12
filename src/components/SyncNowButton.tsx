@@ -8,11 +8,15 @@ export default function SyncNowButton() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [result, setResult] = useState<unknown>(null);
+  const [runId, setRunId] = useState<number | null>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   async function run() {
     setLoading(true);
     setResult(null);
     setProgress("Starting…");
+    setRunId(null);
+    setCancelling(false);
 
     const res = await fetch("/api/admin/sync", { method: "POST" });
     const reader = res.body?.getReader();
@@ -35,26 +39,52 @@ export default function SyncNowButton() {
       for (const line of lines) {
         if (!line.trim()) continue;
         const event = JSON.parse(line);
-        if (event.type === "progress") setProgress(event.message);
+        if (event.type === "started") setRunId(event.runId);
+        else if (event.type === "progress") setProgress(event.message);
         else if (event.type === "done") setResult(event);
       }
     }
 
     setProgress(null);
+    setRunId(null);
+    setCancelling(false);
     setLoading(false);
+    router.refresh();
+  }
+
+  async function cancel() {
+    if (!runId) return;
+    setCancelling(true);
+    await fetch("/api/admin/sync/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ runId }),
+    });
     router.refresh();
   }
 
   return (
     <div className="mb-6">
-      <button
-        type="button"
-        onClick={run}
-        disabled={loading}
-        className="rounded-md bg-slate-900 text-white text-sm font-medium px-4 py-2 disabled:opacity-50"
-      >
-        {loading ? "Syncing…" : "Sync now"}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={run}
+          disabled={loading}
+          className="rounded-md bg-slate-900 text-white text-sm font-medium px-4 py-2 disabled:opacity-50"
+        >
+          {loading ? "Syncing…" : "Sync now"}
+        </button>
+        {loading && runId != null && (
+          <button
+            type="button"
+            onClick={cancel}
+            disabled={cancelling}
+            className="rounded-md border border-red-300 text-red-600 text-sm font-medium px-3 py-2 disabled:opacity-50"
+          >
+            {cancelling ? "Stopping…" : "Stop"}
+          </button>
+        )}
+      </div>
       {loading && progress && <p className="mt-2 text-xs text-slate-500">{progress}</p>}
       {result != null && (
         <pre className="mt-3 text-xs bg-slate-50 border border-slate-200 rounded-md p-3 overflow-x-auto max-h-96">

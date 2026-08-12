@@ -12,6 +12,21 @@ import { parseFlexibleDate } from "./date-utils";
 export type SyncProgress = (message: string) => void;
 const noopProgress: SyncProgress = () => {};
 
+/** Polled at natural checkpoints (between stores/phases) to see if the run should stop early. */
+export type CancelCheck = () => Promise<boolean>;
+const noopCancelCheck: CancelCheck = async () => false;
+
+export class SyncCancelledError extends Error {
+  constructor() {
+    super("Sync cancelled");
+    this.name = "SyncCancelledError";
+  }
+}
+
+async function throwIfCancelled(checkCancelled: CancelCheck): Promise<void> {
+  if (await checkCancelled()) throw new SyncCancelledError();
+}
+
 export interface SyncSummary {
   inventory: { folder: string; store: string; file: string; imported: number }[];
   inventoryUnmatchedFolders: string[];
@@ -60,6 +75,7 @@ async function syncInventoryFromDrive(
   stores: StoreRef[],
   aliases: StoreAlias[],
   onProgress: SyncProgress = noopProgress,
+  checkCancelled: CancelCheck = noopCancelCheck,
 ): Promise<Pick<SyncSummary, "inventory" | "inventoryUnmatchedFolders" | "inventoryErrors">> {
   const drive = getDriveClient();
   const inventory: SyncSummary["inventory"] = [];
@@ -79,6 +95,7 @@ async function syncInventoryFromDrive(
   });
 
   for (const folder of foldersRes.data.files ?? []) {
+    await throwIfCancelled(checkCancelled);
     if (!folder.id || !folder.name) continue;
     const storeId = resolveStoreId(folder.name, stores, aliases, "inventory");
     if (!storeId) {
@@ -133,17 +150,14 @@ async function syncInventoryFromDrive(
         const client = await pool.connect();
         try {
           await client.query("begin");
-          for (const r of rows) {
-            await client.query(
-              `insert into inventory_snapshots
-                 (store_id, snapshot_date, sku, style_code, size_code, description, vendor, on_hand)
-               values ($1, $2, $3, $4, $5, $6, $7, $8)
-               on conflict (store_id, snapshot_date, sku)
-               do update set style_code = excluded.style_code, size_code = excluded.size_code,
-                              description = excluded.description, vendor = excluded.vendor, on_hand = excluded.on_hand`,
-              [storeId, snapshotDate, r.sku, r.styleCode, r.sizeCode, r.description, r.vendor, r.onHand],
-            );
-          }
+          await batchUpsert(
+            client,
+            "inventory_snapshots",
+            ["store_id", "snapshot_date", "sku", "style_code", "size_code", "description", "vendor", "on_hand"],
+            ["store_id", "snapshot_date", "sku"],
+            ["style_code", "size_code", "description", "vendor", "on_hand"],
+            rows.map((r) => [storeId, snapshotDate, r.sku, r.styleCode, r.sizeCode, r.description, r.vendor, r.onHand]),
+          );
           await client.query("commit");
         } catch (e) {
           await client.query("rollback");
@@ -176,6 +190,7 @@ async function syncInventoryFromLocalFolder(
   stores: StoreRef[],
   aliases: StoreAlias[],
   onProgress: SyncProgress = noopProgress,
+  checkCancelled: CancelCheck = noopCancelCheck,
 ): Promise<Pick<SyncSummary, "inventory" | "inventoryUnmatchedFolders" | "inventoryErrors">> {
   const inventory: SyncSummary["inventory"] = [];
   const inventoryUnmatchedFolders: string[] = [];
@@ -185,6 +200,7 @@ async function syncInventoryFromLocalFolder(
   const folders = readdirSync(rootPath, { withFileTypes: true }).filter((d) => d.isDirectory());
 
   for (const folder of folders) {
+    await throwIfCancelled(checkCancelled);
     const storeId = resolveStoreId(folder.name, stores, aliases, "inventory");
     if (!storeId) {
       inventoryUnmatchedFolders.push(folder.name);
@@ -233,17 +249,14 @@ async function syncInventoryFromLocalFolder(
         const client = await pool.connect();
         try {
           await client.query("begin");
-          for (const r of rows) {
-            await client.query(
-              `insert into inventory_snapshots
-                 (store_id, snapshot_date, sku, style_code, size_code, description, vendor, on_hand)
-               values ($1, $2, $3, $4, $5, $6, $7, $8)
-               on conflict (store_id, snapshot_date, sku)
-               do update set style_code = excluded.style_code, size_code = excluded.size_code,
-                              description = excluded.description, vendor = excluded.vendor, on_hand = excluded.on_hand`,
-              [storeId, snapshotDate, r.sku, r.styleCode, r.sizeCode, r.description, r.vendor, r.onHand],
-            );
-          }
+          await batchUpsert(
+            client,
+            "inventory_snapshots",
+            ["store_id", "snapshot_date", "sku", "style_code", "size_code", "description", "vendor", "on_hand"],
+            ["store_id", "snapshot_date", "sku"],
+            ["style_code", "size_code", "description", "vendor", "on_hand"],
+            rows.map((r) => [storeId, snapshotDate, r.sku, r.styleCode, r.sizeCode, r.description, r.vendor, r.onHand]),
+          );
           await client.query("commit");
         } catch (e) {
           await client.query("rollback");
@@ -415,7 +428,10 @@ async function syncSalesFromSheet(
   return { imported: matchedRows.length, skipped: rows.length - matchedRows.length, unmatchedLocations: [...unmatched] };
 }
 
-export async function runSync(onProgress: SyncProgress = noopProgress): Promise<SyncSummary> {
+export async function runSync(
+  onProgress: SyncProgress = noopProgress,
+  checkCancelled: CancelCheck = noopCancelCheck,
+): Promise<SyncSummary> {
   const errors: string[] = [];
   onProgress("Loading stores");
   const { stores, aliases } = await getStoresAndAliases();
@@ -429,20 +445,23 @@ export async function runSync(onProgress: SyncProgress = noopProgress): Promise<
   const rootFolderId = process.env.DRIVE_ROOT_FOLDER_ID || null;
   if (localRoot) {
     try {
-      inventoryResult = await syncInventoryFromLocalFolder(localRoot, stores, aliases, onProgress);
+      inventoryResult = await syncInventoryFromLocalFolder(localRoot, stores, aliases, onProgress, checkCancelled);
     } catch (e) {
+      if (e instanceof SyncCancelledError) throw e;
       errors.push(`Inventory sync failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   } else {
     // No DRIVE_ROOT_FOLDER_ID is fine — syncInventoryFromDrive falls back to
     // whatever folders are shared directly with the service account.
     try {
-      inventoryResult = await syncInventoryFromDrive(rootFolderId, stores, aliases, onProgress);
+      inventoryResult = await syncInventoryFromDrive(rootFolderId, stores, aliases, onProgress, checkCancelled);
     } catch (e) {
+      if (e instanceof SyncCancelledError) throw e;
       errors.push(`Inventory sync failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
+  await throwIfCancelled(checkCancelled);
   onProgress("Pruning inventory older than 30 days");
   let inventoryPruned = 0;
   try {
@@ -451,6 +470,7 @@ export async function runSync(onProgress: SyncProgress = noopProgress): Promise<
     errors.push(`Inventory pruning failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  await throwIfCancelled(checkCancelled);
   let discounts: SyncSummary["discounts"] = null;
   const discountsSheetId = process.env.DISCOUNTS_SHEET_ID;
   if (discountsSheetId) {
@@ -469,6 +489,7 @@ export async function runSync(onProgress: SyncProgress = noopProgress): Promise<
     errors.push("DISCOUNTS_SHEET_ID is not set; skipped discounts sync");
   }
 
+  await throwIfCancelled(checkCancelled);
   let sales: SyncSummary["sales"] = null;
   const salesSheetId = process.env.SALES_SHEET_ID;
   if (salesSheetId) {

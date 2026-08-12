@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { pool } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import SyncNowButton from "@/components/SyncNowButton";
+import CancelRunButton from "@/components/CancelRunButton";
 import DataTable from "@/components/DataTable";
 
 export default async function SyncPage() {
@@ -36,6 +37,11 @@ export default async function SyncPage() {
           { key: "started_at", header: "Started" },
           { key: "finished_at", header: "Finished" },
           { key: "status", header: "Status" },
+          {
+            key: "action",
+            header: "",
+            render: (r) => (r.status === "running" ? <CancelRunButton runId={r.id} /> : null),
+          },
           {
             key: "pruned",
             header: "Pruned (>30d)",
