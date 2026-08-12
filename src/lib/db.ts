@@ -24,6 +24,11 @@ function getPool(): Pool {
       // just execution — without it, one stuck/aborted sync leaving a lock
       // held can silently hang every later query that touches the same rows.
       statement_timeout: 30_000,
+      // node-postgres has NO default timeout for establishing a brand-new
+      // connection — if the TCP handshake to RDS stalls (flaky network path,
+      // as this instance has had before), pool.connect() hangs forever with
+      // nothing to show in pg_stat_activity, since no connection ever formed.
+      connectionTimeoutMillis: 15_000,
     });
   }
   return global._pgPool;
