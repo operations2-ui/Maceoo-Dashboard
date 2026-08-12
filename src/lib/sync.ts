@@ -27,11 +27,25 @@ async function throwIfCancelled(checkCancelled: CancelCheck): Promise<void> {
   if (await checkCancelled()) throw new SyncCancelledError();
 }
 
+// A store's daily inventory file can run into the thousands of SKU rows —
+// backfilling many missing days across several stores in one run can easily
+// take longer than a single invocation should run, and on Vercel would get
+// hard-killed at the 60s function limit before it ever gets to update its
+// own status row (the exact "stuck on running forever" symptom). Bound the
+// inventory phase so it stops cleanly and picks up where it left off next
+// time, instead of assuming one run finishes the whole backlog.
+const INVENTORY_TIME_BUDGET_MS = 40_000;
+
+function pastDeadline(deadline: number | null): boolean {
+  return deadline != null && Date.now() > deadline;
+}
+
 export interface SyncSummary {
   inventory: { folder: string; store: string; file: string; imported: number }[];
   inventoryUnmatchedFolders: string[];
   inventoryErrors: { file: string; error: string }[];
   inventoryPruned: number;
+  inventoryStoppedEarly: boolean;
   discounts: { imported: number; skipped: number; unmatchedLocations: string[] } | null;
   sales: { imported: number; skipped: number; unmatchedLocations: string[] } | null;
   errors: string[];
@@ -85,12 +99,14 @@ async function syncInventoryFromDrive(
   aliases: StoreAlias[],
   onProgress: SyncProgress = noopProgress,
   checkCancelled: CancelCheck = noopCancelCheck,
-): Promise<Pick<SyncSummary, "inventory" | "inventoryUnmatchedFolders" | "inventoryErrors">> {
+  deadline: number | null = null,
+): Promise<Pick<SyncSummary, "inventory" | "inventoryUnmatchedFolders" | "inventoryErrors" | "inventoryStoppedEarly">> {
   const drive = getDriveClient();
   const inventory: SyncSummary["inventory"] = [];
   const inventoryUnmatchedFolders: string[] = [];
   const inventoryErrors: SyncSummary["inventoryErrors"] = [];
   const cutoff = inventoryRetentionCutoff();
+  let stoppedEarly = false;
 
   // Store folders aren't necessarily collected under one dedicated parent —
   // when no DRIVE_ROOT_FOLDER_ID is configured, discover them by what's been
@@ -108,6 +124,10 @@ async function syncInventoryFromDrive(
 
   for (const folder of foldersRes.data.files ?? []) {
     await throwIfCancelled(checkCancelled);
+    if (pastDeadline(deadline)) {
+      stoppedEarly = true;
+      break;
+    }
     if (!folder.id || !folder.name) continue;
     const storeId = resolveStoreId(folder.name, stores, aliases, "inventory");
     if (!storeId) {
@@ -138,6 +158,10 @@ async function syncInventoryFromDrive(
 
     for (const file of filesRes.data.files ?? []) {
       await throwIfCancelled(checkCancelled);
+      if (pastDeadline(deadline)) {
+        stoppedEarly = true;
+        break;
+      }
       if (!file.id || !file.name) continue;
       try {
         // Cheap skip via the filename-derived date before paying for a Drive
@@ -188,9 +212,10 @@ async function syncInventoryFromDrive(
         });
       }
     }
+    if (stoppedEarly) break;
   }
 
-  return { inventory, inventoryUnmatchedFolders, inventoryErrors };
+  return { inventory, inventoryUnmatchedFolders, inventoryErrors, inventoryStoppedEarly: stoppedEarly };
 }
 
 /**
@@ -205,16 +230,22 @@ async function syncInventoryFromLocalFolder(
   aliases: StoreAlias[],
   onProgress: SyncProgress = noopProgress,
   checkCancelled: CancelCheck = noopCancelCheck,
-): Promise<Pick<SyncSummary, "inventory" | "inventoryUnmatchedFolders" | "inventoryErrors">> {
+  deadline: number | null = null,
+): Promise<Pick<SyncSummary, "inventory" | "inventoryUnmatchedFolders" | "inventoryErrors" | "inventoryStoppedEarly">> {
   const inventory: SyncSummary["inventory"] = [];
   const inventoryUnmatchedFolders: string[] = [];
   const inventoryErrors: SyncSummary["inventoryErrors"] = [];
   const cutoff = inventoryRetentionCutoff();
+  let stoppedEarly = false;
 
   const folders = readdirSync(rootPath, { withFileTypes: true }).filter((d) => d.isDirectory());
 
   for (const folder of folders) {
     await throwIfCancelled(checkCancelled);
+    if (pastDeadline(deadline)) {
+      stoppedEarly = true;
+      break;
+    }
     const storeId = resolveStoreId(folder.name, stores, aliases, "inventory");
     if (!storeId) {
       inventoryUnmatchedFolders.push(folder.name);
@@ -238,6 +269,10 @@ async function syncInventoryFromLocalFolder(
 
     for (const file of files) {
       await throwIfCancelled(checkCancelled);
+      if (pastDeadline(deadline)) {
+        stoppedEarly = true;
+        break;
+      }
       try {
         // Cheap skip: check the filename-derived date before paying for a full
         // file read on files we already have (some of these files are large).
@@ -283,9 +318,10 @@ async function syncInventoryFromLocalFolder(
         inventoryErrors.push({ file: `${folder.name}/${file}`, error: e instanceof Error ? e.message : String(e) });
       }
     }
+    if (stoppedEarly) break;
   }
 
-  return { inventory, inventoryUnmatchedFolders, inventoryErrors };
+  return { inventory, inventoryUnmatchedFolders, inventoryErrors, inventoryStoppedEarly: stoppedEarly };
 }
 
 /**
@@ -455,16 +491,28 @@ export async function runSync(
   onProgress("Loading stores");
   const { stores, aliases } = await getStoresAndAliases();
 
-  let inventoryResult: Pick<SyncSummary, "inventory" | "inventoryUnmatchedFolders" | "inventoryErrors"> = {
+  let inventoryResult: Pick<
+    SyncSummary,
+    "inventory" | "inventoryUnmatchedFolders" | "inventoryErrors" | "inventoryStoppedEarly"
+  > = {
     inventory: [],
     inventoryUnmatchedFolders: [],
     inventoryErrors: [],
+    inventoryStoppedEarly: false,
   };
+  const inventoryDeadline = Date.now() + INVENTORY_TIME_BUDGET_MS;
   const localRoot = process.env.LOCAL_INVENTORY_ROOT_PATH;
   const rootFolderId = process.env.DRIVE_ROOT_FOLDER_ID || null;
   if (localRoot) {
     try {
-      inventoryResult = await syncInventoryFromLocalFolder(localRoot, stores, aliases, onProgress, checkCancelled);
+      inventoryResult = await syncInventoryFromLocalFolder(
+        localRoot,
+        stores,
+        aliases,
+        onProgress,
+        checkCancelled,
+        inventoryDeadline,
+      );
     } catch (e) {
       if (e instanceof SyncCancelledError) throw e;
       errors.push(`Inventory sync failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -473,11 +521,22 @@ export async function runSync(
     // No DRIVE_ROOT_FOLDER_ID is fine — syncInventoryFromDrive falls back to
     // whatever folders are shared directly with the service account.
     try {
-      inventoryResult = await syncInventoryFromDrive(rootFolderId, stores, aliases, onProgress, checkCancelled);
+      inventoryResult = await syncInventoryFromDrive(
+        rootFolderId,
+        stores,
+        aliases,
+        onProgress,
+        checkCancelled,
+        inventoryDeadline,
+      );
     } catch (e) {
       if (e instanceof SyncCancelledError) throw e;
       errors.push(`Inventory sync failed: ${e instanceof Error ? e.message : String(e)}`);
     }
+  }
+
+  if (inventoryResult.inventoryStoppedEarly) {
+    onProgress("Inventory backfill hit its time budget — remaining stores/dates will continue on the next sync");
   }
 
   await throwIfCancelled(checkCancelled);

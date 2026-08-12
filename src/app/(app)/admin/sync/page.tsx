@@ -56,6 +56,16 @@ export default async function SyncPage() {
             render: (r) => r.summary?.inventoryPruned ?? "—",
           },
           {
+            key: "note",
+            header: "Note",
+            render: (r) =>
+              r.summary?.inventoryStoppedEarly ? (
+                <span className="text-amber-600">Inventory backfill incomplete — continues next sync</span>
+              ) : (
+                "—"
+              ),
+          },
+          {
             key: "errors",
             header: "Errors",
             render: (r) => (r.summary?.errors?.length ? r.summary.errors.join("; ") : r.error_message ?? "—"),
