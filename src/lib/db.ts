@@ -20,6 +20,10 @@ function getPool(): Pool {
     global._pgPool = new Pool({
       connectionString,
       ssl: isLocal ? undefined : { rejectUnauthorized: false },
+      // Postgres statement_timeout covers time spent waiting on a lock, not
+      // just execution — without it, one stuck/aborted sync leaving a lock
+      // held can silently hang every later query that touches the same rows.
+      statement_timeout: 30_000,
     });
   }
   return global._pgPool;

@@ -117,17 +117,15 @@ async function syncInventoryFromDrive(
     const store = stores.find((s) => s.id === storeId)!;
     onProgress(`Inventory: checking ${store.name}`);
 
-    // Cast to text in SQL rather than converting the returned Date object in
-    // JS: node-postgres parses DATE columns as local-midnight Date objects,
-    // and a naive .toISOString() shifts them back a day for positive UTC offsets.
-    const { rows: maxRows } = await pool.query(
-      "select to_char(max(snapshot_date), 'YYYY-MM-DD') as max_date from inventory_snapshots where store_id = $1",
+    // The set of dates actually present, not just the max — a run that got
+    // interrupted partway (timeout, cancellation, crash) can leave gaps
+    // below the max date, and Drive doesn't return files in date order, so
+    // those gaps must be retried rather than assumed covered.
+    const { rows: dateRows } = await pool.query(
+      "select distinct to_char(snapshot_date, 'YYYY-MM-DD') as d from inventory_snapshots where store_id = $1",
       [storeId],
     );
-    const maxDate: string | null = maxRows[0]?.max_date ?? null;
-    // Never bother looking further back than the retention window, even for
-    // a store with no rows synced yet.
-    const skipAtOrBefore = maxDate && maxDate > cutoff ? maxDate : cutoff;
+    const alreadySynced = new Set<string>(dateRows.map((r) => r.d));
 
     const filesRes = await drive.files.list(
       {
@@ -147,7 +145,7 @@ async function syncInventoryFromDrive(
         // retention window).
         try {
           const filenameDate = dateFromFilename(file.name);
-          if (filenameDate <= skipAtOrBefore) continue;
+          if (filenameDate < cutoff || alreadySynced.has(filenameDate)) continue;
         } catch {
           // filename doesn't carry a date; fall through to reading the file
         }
@@ -159,7 +157,7 @@ async function syncInventoryFromDrive(
           inventoryErrors.push({ file: `${folder.name}/${file.name}`, error: 'No "As of <date>" line found' });
           continue;
         }
-        if (snapshotDate <= skipAtOrBefore) continue;
+        if (snapshotDate < cutoff || alreadySynced.has(snapshotDate)) continue;
 
         onProgress(`Inventory: importing ${store.name} — ${file.name}`);
         const rows = parseInventoryCsv(text);
@@ -225,28 +223,27 @@ async function syncInventoryFromLocalFolder(
     const store = stores.find((s) => s.id === storeId)!;
     onProgress(`Inventory: checking ${store.name}`);
 
-    // Cast to text in SQL rather than converting the returned Date object in JS:
-    // node-postgres parses DATE columns as local-midnight Date objects, and a
-    // naive .toISOString() shifts them back a day for positive UTC offsets.
-    const { rows: maxRows } = await pool.query(
-      "select to_char(max(snapshot_date), 'YYYY-MM-DD') as max_date from inventory_snapshots where store_id = $1",
+    // The set of dates actually present, not just the max — a run that got
+    // interrupted partway (timeout, cancellation, crash) can leave gaps
+    // below the max date, and files aren't guaranteed to be processed in
+    // date order, so those gaps must be retried rather than assumed covered.
+    const { rows: dateRows } = await pool.query(
+      "select distinct to_char(snapshot_date, 'YYYY-MM-DD') as d from inventory_snapshots where store_id = $1",
       [storeId],
     );
-    const maxDate: string | null = maxRows[0]?.max_date ?? null;
-    // Never bother looking further back than the retention window, even for
-    // a store with no rows synced yet.
-    const skipAtOrBefore = maxDate && maxDate > cutoff ? maxDate : cutoff;
+    const alreadySynced = new Set<string>(dateRows.map((r) => r.d));
 
     const folderPath = join(rootPath, folder.name);
     const files = readdirSync(folderPath).filter((f) => f.endsWith(".csv"));
 
     for (const file of files) {
+      await throwIfCancelled(checkCancelled);
       try {
         // Cheap skip: check the filename-derived date before paying for a full
         // file read on files we already have (some of these files are large).
         try {
           const filenameDate = dateFromFilename(file);
-          if (filenameDate <= skipAtOrBefore) continue;
+          if (filenameDate < cutoff || alreadySynced.has(filenameDate)) continue;
         } catch {
           // filename doesn't carry a date; fall through to reading the file
         }
@@ -258,7 +255,7 @@ async function syncInventoryFromLocalFolder(
           inventoryErrors.push({ file: `${folder.name}/${file}`, error: 'No "As of <date>" line found' });
           continue;
         }
-        if (snapshotDate <= skipAtOrBefore) continue;
+        if (snapshotDate < cutoff || alreadySynced.has(snapshotDate)) continue;
 
         onProgress(`Inventory: importing ${store.name} — ${file}`);
         const rows = parseInventoryCsv(text);
