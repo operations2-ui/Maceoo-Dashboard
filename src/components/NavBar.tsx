@@ -7,7 +7,6 @@ const links = [
   { href: "/inventory/negative", label: "Negative Inventory" },
   { href: "/inventory/sold-negative", label: "Prior-Day Oversell" },
   { href: "/inventory/missing-sizes", label: "Missing Sizes" },
-  { href: "/discounts", label: "Discounts" },
   { href: "/sales", label: "Sales" },
 ];
 

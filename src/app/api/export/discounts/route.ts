@@ -20,9 +20,9 @@ export async function GET(request: Request) {
 
   const rows = await getDiscounts(storeIds, fromDate, toDate);
   const csv = toCsv(
-    ["Date", "Store", "User", "Discount", "Amount", "Order", "Channel"],
+    ["Date", "Store", "User", "Discount", "Amount", "Orders"],
     rows,
-    ["day_date", "store_name", "user_name", "discount_name", "total_discounts", "order_id", "pos_flag"],
+    ["day_date", "store_name", "user_name", "discount_name", "total_discounts", "total_orders"],
   );
   return csvResponse(`discounts_${fromDate}_to_${toDate}.csv`, csv);
 }

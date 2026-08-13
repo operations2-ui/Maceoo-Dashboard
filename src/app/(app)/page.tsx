@@ -110,7 +110,7 @@ export default async function Home() {
           value={money(totalDiscounts)}
           deltaPct={pctDelta(totalDiscounts, prevTotalDiscounts)}
           deltaGoodDirection="down"
-          href="/discounts"
+          href="/sales"
         />
         <StatTile
           label="Negative inventory"

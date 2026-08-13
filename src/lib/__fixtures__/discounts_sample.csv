@@ -1,7 +1,0 @@
-Discount Amount by Date and Location and User Name Wise
-Date within Jan 1, 2026, Aug 9, 2026
-Total discounts != 0
-DAY Date,Location Name,User name,Discount names,Total discounts,Order id,POS or Non-POS,Total orders
-2026-08-06,Paris Store,Alice,Staff Discount,15.50,1001,POS,1
-2026-08-06,Paris Store,Bob,Clearance,42.00,1002,Non-POS,1
-2026-08-07,ARLV Store,Alice,Staff Discount,9.99,1003,POS,1

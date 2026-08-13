@@ -130,21 +130,11 @@ function SheetImportForm({ title, description, endpoint }: { title: string; desc
   );
 }
 
-export function DiscountsImportForm() {
-  return (
-    <SheetImportForm
-      title="Discounts Sheet"
-      description={'Export the "Discount Amount by Date and Location and User Name Wise" sheet as CSV and upload it here. All stores in one file.'}
-      endpoint="/api/import/discounts"
-    />
-  );
-}
-
 export function SalesImportForm() {
   return (
     <SheetImportForm
       title="Sales Sheet"
-      description="Export the day-wise sales matrix sheet as CSV and upload it here. All stores in one file."
+      description="Export the day-wise sales matrix sheet as CSV and upload it here. All stores in one file. This sheet now carries discount usage too, broken down by user and discount combination, so a separate Discounts upload isn't needed."
       endpoint="/api/import/sales"
     />
   );

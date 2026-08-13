@@ -5,7 +5,6 @@ import { from as copyFrom } from "pg-copy-streams";
 import { pool } from "./db";
 import { getDriveClient, getSheetsClient } from "./google-clients";
 import { parseInventoryCsv, dateFromFilename, type InventoryRow } from "./inventory-parser";
-import { parseDiscountsCsv } from "./discounts-parser";
 import { parseSalesCsv } from "./sales-parser";
 import { resolveStoreId, type StoreRef, type StoreAlias } from "./store-resolver";
 import { rowsToCsv } from "./csv-utils";
@@ -418,59 +417,36 @@ async function batchUpsert(
   }
 }
 
-async function syncDiscountsFromSheet(
-  sheetId: string,
-  range: string,
-  stores: StoreRef[],
-  aliases: StoreAlias[],
-): Promise<SyncSummary["discounts"]> {
-  const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get(
-    { spreadsheetId: sheetId, range },
-    { timeout: GOOGLE_REQUEST_TIMEOUT_MS },
-  );
-  const csv = rowsToCsv((res.data.values ?? []) as string[][]);
-  const rows = parseDiscountsCsv(csv);
-
-  const unmatched = new Set<string>();
-  const matchedRows: unknown[][] = [];
-  for (const r of rows) {
-    const storeId = resolveStoreId(r.locationName, stores, aliases, "sheet");
-    if (!storeId) {
-      unmatched.add(r.locationName);
-      continue;
-    }
-    matchedRows.push([storeId, r.dayDate, r.userName, r.discountName, r.totalDiscounts, r.orderId, r.posFlag, r.totalOrders]);
-  }
-
-  const client = await pool.connect();
-  try {
-    await client.query("begin");
-    await batchUpsert(
-      client,
-      "discounts",
-      ["store_id", "day_date", "user_name", "discount_name", "total_discounts", "order_id", "pos_flag", "total_orders"],
-      ["store_id", "day_date", "order_id", "discount_name"],
-      ["user_name", "total_discounts", "pos_flag", "total_orders"],
-      matchedRows,
-    );
-    await client.query("commit");
-  } catch (e) {
-    await client.query("rollback");
-    throw e;
-  } finally {
-    client.release();
-  }
-
-  return { imported: matchedRows.length, skipped: rows.length - matchedRows.length, unmatchedLocations: [...unmatched] };
+interface DailyTotal {
+  storeId: string;
+  date: string;
+  totalOrders: number;
+  grossSales: number;
+  discounts: number;
+  refunds: number;
+  netSales: number;
+  taxes: number;
+  shipping: number;
+  totalSales: number;
+  cogs: number;
+  grossMargin: number;
 }
 
+/**
+ * The Sales sheet now doubles as the Discounts source: each store/day is
+ * broken into one row per (user, discount-name combination) slice of that
+ * day's orders, instead of a single per-day total row. Summing every row for
+ * a store+date reproduces the old day-level sales_daily totals; rows whose
+ * discount-name combo is non-empty double as the discount-usage detail that
+ * used to come from a separate Discounts sheet (there's no per-order id
+ * anymore, so discounts are now keyed by store+day+user+discount combo).
+ */
 async function syncSalesFromSheet(
   sheetId: string,
   range: string,
   stores: StoreRef[],
   aliases: StoreAlias[],
-): Promise<SyncSummary["sales"]> {
+): Promise<{ sales: SyncSummary["sales"]; discounts: SyncSummary["discounts"] }> {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get(
     { spreadsheetId: sheetId, range },
@@ -480,28 +456,67 @@ async function syncSalesFromSheet(
   const rows = parseSalesCsv(csv);
 
   const unmatched = new Set<string>();
-  const matchedRows: unknown[][] = [];
+  const dailyTotals = new Map<string, DailyTotal>();
+  const discountRows: unknown[][] = [];
+  let matchedRowCount = 0;
+
   for (const r of rows) {
     const storeId = resolveStoreId(r.locationName, stores, aliases, "sheet");
     if (!storeId) {
       unmatched.add(r.locationName);
       continue;
     }
-    matchedRows.push([
-      storeId,
-      r.orderDate,
-      r.totalOrders,
-      r.grossSales,
-      r.discounts,
-      r.refunds,
-      r.netSales,
-      r.taxes,
-      r.shipping,
-      r.totalSales,
-      r.cogs,
-      r.grossMargin,
-    ]);
+    matchedRowCount++;
+
+    const key = `${storeId}|${r.orderDate}`;
+    let day = dailyTotals.get(key);
+    if (!day) {
+      day = {
+        storeId,
+        date: r.orderDate,
+        totalOrders: 0,
+        grossSales: 0,
+        discounts: 0,
+        refunds: 0,
+        netSales: 0,
+        taxes: 0,
+        shipping: 0,
+        totalSales: 0,
+        cogs: 0,
+        grossMargin: 0,
+      };
+      dailyTotals.set(key, day);
+    }
+    day.totalOrders += r.totalOrders ?? 0;
+    day.grossSales += r.grossSales ?? 0;
+    day.discounts += r.discounts ?? 0;
+    day.refunds += r.refunds ?? 0;
+    day.netSales += r.netSales ?? 0;
+    day.taxes += r.taxes ?? 0;
+    day.shipping += r.shipping ?? 0;
+    day.totalSales += r.totalSales ?? 0;
+    day.cogs += r.cogs ?? 0;
+    day.grossMargin += r.grossMargin ?? 0;
+
+    if (r.discountNames) {
+      discountRows.push([storeId, r.orderDate, r.userName, r.discountNames, r.discounts ?? 0, r.totalOrders]);
+    }
   }
+
+  const salesUpsertRows = [...dailyTotals.values()].map((d) => [
+    d.storeId,
+    d.date,
+    d.totalOrders,
+    d.grossSales,
+    d.discounts,
+    d.refunds,
+    d.netSales,
+    d.taxes,
+    d.shipping,
+    d.totalSales,
+    d.cogs,
+    d.grossMargin,
+  ]);
 
   const client = await pool.connect();
   try {
@@ -518,8 +533,18 @@ async function syncSalesFromSheet(
         "total_orders", "gross_sales", "discounts", "refunds", "net_sales",
         "taxes", "shipping", "total_sales", "cogs", "gross_margin",
       ],
-      matchedRows,
+      salesUpsertRows,
     );
+    if (discountRows.length > 0) {
+      await batchUpsert(
+        client,
+        "discounts",
+        ["store_id", "day_date", "user_name", "discount_name", "total_discounts", "total_orders"],
+        ["store_id", "day_date", "user_name", "discount_name"],
+        ["total_discounts", "total_orders"],
+        discountRows,
+      );
+    }
     await client.query("commit");
   } catch (e) {
     await client.query("rollback");
@@ -528,7 +553,18 @@ async function syncSalesFromSheet(
     client.release();
   }
 
-  return { imported: matchedRows.length, skipped: rows.length - matchedRows.length, unmatchedLocations: [...unmatched] };
+  return {
+    sales: {
+      imported: salesUpsertRows.length,
+      skipped: rows.length - matchedRowCount,
+      unmatchedLocations: [...unmatched],
+    },
+    discounts: {
+      imported: discountRows.length,
+      skipped: matchedRowCount - discountRows.length,
+      unmatchedLocations: [...unmatched],
+    },
+  };
 }
 
 export async function runSync(
@@ -596,37 +632,24 @@ export async function runSync(
     errors.push(`Inventory pruning failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  await throwIfCancelled(checkCancelled);
-  let discounts: SyncSummary["discounts"] = null;
-  const discountsSheetId = process.env.DISCOUNTS_SHEET_ID;
-  if (discountsSheetId) {
-    onProgress("Syncing discounts");
-    try {
-      discounts = await syncDiscountsFromSheet(
-        discountsSheetId,
-        process.env.DISCOUNTS_SHEET_RANGE || "A:Z",
-        stores,
-        aliases,
-      );
-    } catch (e) {
-      errors.push(`Discounts sync failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  } else {
-    errors.push("DISCOUNTS_SHEET_ID is not set; skipped discounts sync");
-  }
-
+  // Discounts now come from the Sales sheet itself (each row is a per-user,
+  // per-discount-combo slice of a day's orders), so one fetch covers both —
+  // no separate Discounts sheet needed.
   await throwIfCancelled(checkCancelled);
   let sales: SyncSummary["sales"] = null;
+  let discounts: SyncSummary["discounts"] = null;
   const salesSheetId = process.env.SALES_SHEET_ID;
   if (salesSheetId) {
-    onProgress("Syncing sales");
+    onProgress("Syncing sales and discounts");
     try {
-      sales = await syncSalesFromSheet(salesSheetId, process.env.SALES_SHEET_RANGE || "A:Z", stores, aliases);
+      const result = await syncSalesFromSheet(salesSheetId, process.env.SALES_SHEET_RANGE || "A:Z", stores, aliases);
+      sales = result.sales;
+      discounts = result.discounts;
     } catch (e) {
-      errors.push(`Sales sync failed: ${e instanceof Error ? e.message : String(e)}`);
+      errors.push(`Sales/discounts sync failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   } else {
-    errors.push("SALES_SHEET_ID is not set; skipped sales sync");
+    errors.push("SALES_SHEET_ID is not set; skipped sales/discounts sync");
   }
 
   onProgress("Finishing up");

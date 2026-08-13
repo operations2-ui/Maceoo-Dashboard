@@ -7,15 +7,14 @@ export default function DiscountsTable({ rows }: { rows: DiscountRow[] }) {
   const filters: FilterConfig<DiscountRow>[] = [
     { type: "select", key: "store_name", label: "Store", value: (r) => r.store_name ?? "" },
     { type: "select", key: "user_name", label: "User", value: (r) => r.user_name ?? "" },
-    { type: "select", key: "pos_flag", label: "Channel", value: (r) => r.pos_flag ?? "" },
     { type: "numberMin", key: "amountMin", label: "Amount ≥", value: (r) => Number(r.total_discounts) || 0 },
   ];
 
   return (
     <FilterableTable
       rows={rows}
-      searchKeys={["user_name", "discount_name", "order_id", "store_name"]}
-      searchPlaceholder="Search user, discount, order..."
+      searchKeys={["user_name", "discount_name", "store_name"]}
+      searchPlaceholder="Search user, discount, store..."
       filters={filters}
       emptyMessage="No discounts found for this filter."
       columns={[
@@ -30,22 +29,7 @@ export default function DiscountsTable({ rows }: { rows: DiscountRow[] }) {
           render: (r) =>
             `$${Number(r.total_discounts).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         },
-        { key: "order_id", header: "Order" },
-        {
-          key: "pos_flag",
-          header: "Channel",
-          render: (r) => (
-            <span
-              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                r.pos_flag === "POS"
-                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
-                  : "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
-              }`}
-            >
-              {r.pos_flag}
-            </span>
-          ),
-        },
+        { key: "total_orders", header: "Orders", align: "right" },
       ]}
     />
   );

@@ -24,11 +24,11 @@ export default async function SyncPage() {
     <div>
       <h1 className="text-xl font-semibold text-slate-900 dark:text-white mb-1">Drive/Sheets Sync</h1>
       <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-        Pulls the latest inventory CSVs from Drive and the Discounts/Sales Google Sheets directly, using the
-        configured service account. Inventory folders are discovered automatically from whatever&apos;s shared
-        with the service account (or under <code>DRIVE_ROOT_FOLDER_ID</code> if set); requires{" "}
-        <code>DISCOUNTS_SHEET_ID</code> and <code>SALES_SHEET_ID</code> to be set. Only the last 30 days of
-        inventory are kept.
+        Pulls the latest inventory CSVs from Drive and the Sales Google Sheet directly, using the configured
+        service account. The Sales sheet also carries discount usage, so a separate Discounts sheet isn&apos;t
+        needed. Inventory folders are discovered automatically from whatever&apos;s shared with the service
+        account (or under <code>DRIVE_ROOT_FOLDER_ID</code> if set); requires <code>SALES_SHEET_ID</code> to be
+        set. Only the last 30 days of inventory are kept.
       </p>
       <SyncNowButton />
       <LiveRunsRefresher active={hasRunning} />

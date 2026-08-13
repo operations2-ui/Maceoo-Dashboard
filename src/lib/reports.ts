@@ -66,15 +66,20 @@ export interface DiscountRow {
   user_name: string;
   discount_name: string;
   total_discounts: string;
-  order_id: string;
-  pos_flag: string;
+  total_orders: number | null;
 }
 
+/**
+ * Discount usage now comes from the Sales sheet itself (each row is a
+ * per-user, per-discount-combo slice of a day's orders), so this reads the
+ * same discounts table that syncSalesFromSheet populates — no separate
+ * Discounts sheet/sync anymore.
+ */
 export async function getDiscounts(storeIds: string[], fromDate: string, toDate: string): Promise<DiscountRow[]> {
   if (storeIds.length === 0) return [];
   const { rows } = await pool.query(
     `select to_char(d.day_date, 'YYYY-MM-DD') as day_date, s.name as store_name, d.user_name, d.discount_name,
-            d.total_discounts, d.order_id, d.pos_flag
+            d.total_discounts, d.total_orders
      from discounts d
      join stores s on s.id = d.store_id
      where d.store_id = any($1::uuid[]) and d.day_date >= $2 and d.day_date <= $3
