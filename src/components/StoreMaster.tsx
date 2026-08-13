@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface Store {
   id: string;
@@ -11,6 +12,71 @@ interface Alias {
   store_id: string;
   source: "inventory" | "sheet";
   alias_name: string;
+}
+
+function AddStoreForm() {
+  const router = useRouter();
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setSaving(true);
+    setError(null);
+    const res = await fetch("/api/admin/stores", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim(), code: code.trim() || null }),
+    });
+    const data = await res.json();
+    setSaving(false);
+    if (!res.ok) {
+      setError(data.error ?? "Add failed");
+      return;
+    }
+    setName("");
+    setCode("");
+    router.refresh();
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="flex flex-wrap items-end gap-3 mb-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4"
+    >
+      <div>
+        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Store name</label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g. Maceoo ilani"
+          className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm w-64"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Code (optional)</label>
+        <input
+          type="text"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          placeholder="e.g. ILANI"
+          className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm w-32"
+        />
+      </div>
+      <button
+        type="submit"
+        disabled={saving || !name.trim()}
+        className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 disabled:opacity-50"
+      >
+        {saving ? "Adding…" : "Add store"}
+      </button>
+      {error && <span className="text-sm text-red-600 dark:text-red-400">{error}</span>}
+    </form>
+  );
 }
 
 function AliasCell({ storeId, source, initial }: { storeId: string; source: "inventory" | "sheet"; initial: string[] }) {
@@ -66,7 +132,9 @@ function AliasCell({ storeId, source, initial }: { storeId: string; source: "inv
 
 export default function StoreMaster({ stores, aliases }: { stores: Store[]; aliases: Alias[] }) {
   return (
-    <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
+    <div>
+      <AddStoreForm />
+      <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
@@ -103,6 +171,7 @@ export default function StoreMaster({ stores, aliases }: { stores: Store[]; alia
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

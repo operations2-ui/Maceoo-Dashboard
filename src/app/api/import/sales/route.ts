@@ -19,6 +19,10 @@ interface DailyTotal {
   grossMargin: number;
 }
 
+interface UserDailyTotal extends DailyTotal {
+  userName: string;
+}
+
 export async function POST(request: Request) {
   const auth = await requireAdmin();
   if (!auth.ok) return NextResponse.json({ error: auth.message }, { status: auth.status });
@@ -46,6 +50,7 @@ export async function POST(request: Request) {
   // store+date before writing to sales_daily, and collect discount-named
   // slices separately for the discounts table.
   const dailyTotals = new Map<string, DailyTotal>();
+  const userTotals = new Map<string, UserDailyTotal>();
   const discountRows: { storeId: string; date: string; userName: string; discountName: string; totalDiscounts: number; totalOrders: number | null }[] = [];
   let matchedRowCount = 0;
 
@@ -87,6 +92,37 @@ export async function POST(request: Request) {
     day.cogs += r.cogs ?? 0;
     day.grossMargin += r.grossMargin ?? 0;
 
+    const userKey = `${storeId}|${r.orderDate}|${r.userName}`;
+    let userDay = userTotals.get(userKey);
+    if (!userDay) {
+      userDay = {
+        storeId,
+        date: r.orderDate,
+        userName: r.userName,
+        totalOrders: 0,
+        grossSales: 0,
+        discounts: 0,
+        refunds: 0,
+        netSales: 0,
+        taxes: 0,
+        shipping: 0,
+        totalSales: 0,
+        cogs: 0,
+        grossMargin: 0,
+      };
+      userTotals.set(userKey, userDay);
+    }
+    userDay.totalOrders += r.totalOrders ?? 0;
+    userDay.grossSales += r.grossSales ?? 0;
+    userDay.discounts += r.discounts ?? 0;
+    userDay.refunds += r.refunds ?? 0;
+    userDay.netSales += r.netSales ?? 0;
+    userDay.taxes += r.taxes ?? 0;
+    userDay.shipping += r.shipping ?? 0;
+    userDay.totalSales += r.totalSales ?? 0;
+    userDay.cogs += r.cogs ?? 0;
+    userDay.grossMargin += r.grossMargin ?? 0;
+
     if (r.discountNames) {
       discountRows.push({
         storeId,
@@ -115,6 +151,33 @@ export async function POST(request: Request) {
         [
           d.storeId,
           d.date,
+          d.totalOrders,
+          d.grossSales,
+          d.discounts,
+          d.refunds,
+          d.netSales,
+          d.taxes,
+          d.shipping,
+          d.totalSales,
+          d.cogs,
+          d.grossMargin,
+        ],
+      );
+    }
+    for (const d of userTotals.values()) {
+      await client.query(
+        `insert into sales_by_user
+           (store_id, day_date, user_name, total_orders, gross_sales, discounts, refunds, net_sales, taxes, shipping, total_sales, cogs, gross_margin)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         on conflict (store_id, day_date, user_name)
+         do update set total_orders = excluded.total_orders, gross_sales = excluded.gross_sales,
+                        discounts = excluded.discounts, refunds = excluded.refunds, net_sales = excluded.net_sales,
+                        taxes = excluded.taxes, shipping = excluded.shipping, total_sales = excluded.total_sales,
+                        cogs = excluded.cogs, gross_margin = excluded.gross_margin`,
+        [
+          d.storeId,
+          d.date,
+          d.userName,
           d.totalOrders,
           d.grossSales,
           d.discounts,

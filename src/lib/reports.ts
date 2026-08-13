@@ -146,3 +146,35 @@ export async function getSales(storeIds: string[], fromDate: string, toDate: str
   );
   return rows;
 }
+
+export interface SalesByUserRow {
+  [key: string]: unknown;
+  day_date: string;
+  store_name: string;
+  user_name: string;
+  total_orders: number | null;
+  gross_sales: string | null;
+  discounts: string | null;
+  net_sales: string | null;
+  /** discounts / gross_sales * 100, rounded to 1dp; null when gross_sales is 0. */
+  discount_pct: string | null;
+}
+
+/**
+ * One row per (store, day, user) — sales and discount usage together, so
+ * they can be compared per user instead of as two separate reports.
+ */
+export async function getSalesByUser(storeIds: string[], fromDate: string, toDate: string): Promise<SalesByUserRow[]> {
+  if (storeIds.length === 0) return [];
+  const { rows } = await pool.query(
+    `select to_char(u.day_date, 'YYYY-MM-DD') as day_date, s.name as store_name, u.user_name,
+            u.total_orders, u.gross_sales, u.discounts, u.net_sales,
+            case when u.gross_sales > 0 then round((u.discounts / u.gross_sales) * 100, 1) else null end as discount_pct
+     from sales_by_user u
+     join stores s on s.id = u.store_id
+     where u.store_id = any($1::uuid[]) and u.day_date >= $2 and u.day_date <= $3
+     order by u.day_date desc, u.gross_sales desc`,
+    [storeIds, fromDate, toDate],
+  );
+  return rows;
+}

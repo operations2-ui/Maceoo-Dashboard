@@ -1,11 +1,11 @@
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getAccessibleStores } from "@/lib/authz";
-import { getSales, getDiscounts } from "@/lib/reports";
+import { getSales, getSalesByUser } from "@/lib/reports";
 import { StoreDateRangeFilter } from "@/components/FilterForm";
 import SalesTable from "@/components/tables/SalesTable";
 import SalesTrendChart from "@/components/SalesTrendChart";
 import StoreSalesChart from "@/components/StoreSalesChart";
-import DiscountsTable from "@/components/tables/DiscountsTable";
+import SalesByUserTable from "@/components/tables/SalesByUserTable";
 import DownloadCsvLink from "@/components/DownloadCsvLink";
 
 const money = (n: number | string | null) =>
@@ -33,9 +33,9 @@ export default async function SalesPage({
 
   const storeIds = store && store !== "all" && allowedIds.includes(store) ? [store] : allowedIds;
 
-  const [rows, discountRows] = await Promise.all([
+  const [rows, userRows] = await Promise.all([
     getSales(storeIds, fromDate, toDate),
-    getDiscounts(storeIds, fromDate, toDate),
+    getSalesByUser(storeIds, fromDate, toDate),
   ]);
 
   const totals = rows.reduce(
@@ -46,13 +46,15 @@ export default async function SalesPage({
     }),
     { orders: 0, netSales: 0, grossMargin: 0 },
   );
-  const totalDiscounts = discountRows.reduce((sum, r) => sum + Number(r.total_discounts ?? 0), 0);
+  const totalDiscounts = userRows.reduce((sum, r) => sum + Number(r.discounts ?? 0), 0);
+  const totalGrossSales = userRows.reduce((sum, r) => sum + Number(r.gross_sales ?? 0), 0);
+  const overallDiscountPct = totalGrossSales > 0 ? (totalDiscounts / totalGrossSales) * 100 : null;
 
   return (
     <div>
       <h1 className="text-xl font-semibold text-slate-900 dark:text-white mb-1">Sales</h1>
       <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-        Day-wise sales matrix and discount usage for the selected store(s) and period.
+        Day-wise sales matrix and per-user discount usage for the selected store(s) and period.
       </p>
       <StoreDateRangeFilter stores={stores} store={store} from={fromDate} to={toDate} />
 
@@ -87,7 +89,12 @@ export default async function SalesPage({
         </div>
         <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
           <p className="text-xs text-slate-500 dark:text-slate-400">Discounts Given</p>
-          <p className="text-xl font-semibold text-slate-900 dark:text-white">{money(totalDiscounts)}</p>
+          <p className="text-xl font-semibold text-slate-900 dark:text-white">
+            {money(totalDiscounts)}
+            {overallDiscountPct != null && (
+              <span className="text-sm font-normal text-slate-500 dark:text-slate-400"> ({overallDiscountPct.toFixed(1)}%)</span>
+            )}
+          </p>
         </div>
       </div>
 
@@ -98,18 +105,17 @@ export default async function SalesPage({
 
       <div className="flex items-center justify-between mt-8 mb-3 flex-wrap gap-2">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Discount Usage</h2>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Sales by User</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            <span className="font-medium">{discountRows.length.toLocaleString("en-US")}</span> discount
-            {discountRows.length === 1 ? "" : "s"} totaling{" "}
-            <span className="font-medium">{money(totalDiscounts)}</span>
+            Sales and discount usage per user, for comparison — <span className="font-medium">{money(totalDiscounts)}</span>{" "}
+            in discounts{overallDiscountPct != null ? ` (${overallDiscountPct.toFixed(1)}% of gross sales)` : ""}.
           </p>
         </div>
-        {discountRows.length > 0 && (
-          <DownloadCsvLink href={`/api/export/discounts?store=${store ?? "all"}&from=${fromDate}&to=${toDate}`} />
+        {userRows.length > 0 && (
+          <DownloadCsvLink href={`/api/export/sales-by-user?store=${store ?? "all"}&from=${fromDate}&to=${toDate}`} />
         )}
       </div>
-      <DiscountsTable rows={discountRows} />
+      <SalesByUserTable rows={userRows} />
     </div>
   );
 }

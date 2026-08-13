@@ -432,6 +432,10 @@ interface DailyTotal {
   grossMargin: number;
 }
 
+interface UserDailyTotal extends DailyTotal {
+  userName: string;
+}
+
 /**
  * The Sales sheet now doubles as the Discounts source: each store/day is
  * broken into one row per (user, discount-name combination) slice of that
@@ -457,6 +461,7 @@ async function syncSalesFromSheet(
 
   const unmatched = new Set<string>();
   const dailyTotals = new Map<string, DailyTotal>();
+  const userTotals = new Map<string, UserDailyTotal>();
   const discountRows: unknown[][] = [];
   let matchedRowCount = 0;
 
@@ -498,6 +503,40 @@ async function syncSalesFromSheet(
     day.cogs += r.cogs ?? 0;
     day.grossMargin += r.grossMargin ?? 0;
 
+    // Same aggregation as above, but also split by user — this is what lets
+    // the Sales page compare a user's sales against their discount usage in
+    // one row instead of two separate reports.
+    const userKey = `${storeId}|${r.orderDate}|${r.userName}`;
+    let userDay = userTotals.get(userKey);
+    if (!userDay) {
+      userDay = {
+        storeId,
+        date: r.orderDate,
+        userName: r.userName,
+        totalOrders: 0,
+        grossSales: 0,
+        discounts: 0,
+        refunds: 0,
+        netSales: 0,
+        taxes: 0,
+        shipping: 0,
+        totalSales: 0,
+        cogs: 0,
+        grossMargin: 0,
+      };
+      userTotals.set(userKey, userDay);
+    }
+    userDay.totalOrders += r.totalOrders ?? 0;
+    userDay.grossSales += r.grossSales ?? 0;
+    userDay.discounts += r.discounts ?? 0;
+    userDay.refunds += r.refunds ?? 0;
+    userDay.netSales += r.netSales ?? 0;
+    userDay.taxes += r.taxes ?? 0;
+    userDay.shipping += r.shipping ?? 0;
+    userDay.totalSales += r.totalSales ?? 0;
+    userDay.cogs += r.cogs ?? 0;
+    userDay.grossMargin += r.grossMargin ?? 0;
+
     if (r.discountNames) {
       discountRows.push([storeId, r.orderDate, r.userName, r.discountNames, r.discounts ?? 0, r.totalOrders]);
     }
@@ -506,6 +545,21 @@ async function syncSalesFromSheet(
   const salesUpsertRows = [...dailyTotals.values()].map((d) => [
     d.storeId,
     d.date,
+    d.totalOrders,
+    d.grossSales,
+    d.discounts,
+    d.refunds,
+    d.netSales,
+    d.taxes,
+    d.shipping,
+    d.totalSales,
+    d.cogs,
+    d.grossMargin,
+  ]);
+  const userSalesUpsertRows = [...userTotals.values()].map((d) => [
+    d.storeId,
+    d.date,
+    d.userName,
     d.totalOrders,
     d.grossSales,
     d.discounts,
@@ -534,6 +588,20 @@ async function syncSalesFromSheet(
         "taxes", "shipping", "total_sales", "cogs", "gross_margin",
       ],
       salesUpsertRows,
+    );
+    await batchUpsert(
+      client,
+      "sales_by_user",
+      [
+        "store_id", "day_date", "user_name", "total_orders", "gross_sales", "discounts", "refunds",
+        "net_sales", "taxes", "shipping", "total_sales", "cogs", "gross_margin",
+      ],
+      ["store_id", "day_date", "user_name"],
+      [
+        "total_orders", "gross_sales", "discounts", "refunds", "net_sales",
+        "taxes", "shipping", "total_sales", "cogs", "gross_margin",
+      ],
+      userSalesUpsertRows,
     );
     if (discountRows.length > 0) {
       await batchUpsert(
