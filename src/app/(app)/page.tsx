@@ -13,6 +13,20 @@ const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 const money = (n: number) =>
   `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
+/** "Jul 14 – Aug 13, 2026" (year on the end date only, unless the range crosses a year boundary). */
+function formatDateRange(fromIso: string, toIso: string): string {
+  const from = new Date(`${fromIso}T00:00:00`);
+  const to = new Date(`${toIso}T00:00:00`);
+  const sameYear = from.getFullYear() === to.getFullYear();
+  const fromLabel = from.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: sameYear ? undefined : "numeric",
+  });
+  const toLabel = to.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return `${fromLabel} – ${toLabel}`;
+}
+
 function sumSales(rows: SalesRow[]) {
   return rows.reduce(
     (acc, r) => ({
@@ -75,7 +89,12 @@ export default async function Home() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-slate-900 dark:text-white mb-1">Overview</h1>
+      <div className="flex items-baseline justify-between flex-wrap gap-2 mb-1">
+        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Overview</h1>
+        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          {formatDateRange(fromDate, toDate)}
+        </span>
+      </div>
       <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
         Last {PERIOD_DAYS} days across {stores.length} store{stores.length === 1 ? "" : "s"}.
       </p>

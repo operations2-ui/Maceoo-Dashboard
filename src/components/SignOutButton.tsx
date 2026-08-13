@@ -13,7 +13,7 @@ export default function SignOutButton() {
         router.push("/login");
         router.refresh();
       }}
-      className="text-sm text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+      className="text-sm text-slate-400 hover:text-white"
     >
       Sign out
     </button>
