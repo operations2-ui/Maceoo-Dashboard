@@ -34,7 +34,15 @@ async function throwIfCancelled(checkCancelled: CancelCheck): Promise<void> {
 // own status row (the exact "stuck on running forever" symptom). Bound the
 // inventory phase so it stops cleanly and picks up where it left off next
 // time, instead of assuming one run finishes the whole backlog.
-const INVENTORY_TIME_BUDGET_MS = 40_000;
+//
+// Configurable via SYNC_TIME_BUDGET_MS: once daily syncs have caught up,
+// there's only ~1 new file per store to import and 40s is more than enough
+// — but during the initial backfill this can be set much higher locally
+// (no Vercel process to get killed here). Do NOT set this above ~50000 on
+// Vercel — its function hard-stops at the route's maxDuration (60s), so a
+// higher budget there would just get killed mid-run instead of stopping
+// cleanly on its own.
+const INVENTORY_TIME_BUDGET_MS = Number(process.env.SYNC_TIME_BUDGET_MS) || 40_000;
 
 function pastDeadline(deadline: number | null): boolean {
   return deadline != null && Date.now() > deadline;
