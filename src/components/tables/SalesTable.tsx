@@ -13,7 +13,6 @@ const money = (n: number | string | null) =>
 
 export default function SalesTable({ rows }: { rows: SalesRow[] }) {
   const filters: FilterConfig<SalesRow>[] = [
-    { type: "select", key: "store_name", label: "Store", value: (r) => r.store_name ?? "" },
     { type: "numberMin", key: "netSalesMin", label: "Net Sales ≥", value: (r) => Number(r.net_sales) || 0 },
   ];
 

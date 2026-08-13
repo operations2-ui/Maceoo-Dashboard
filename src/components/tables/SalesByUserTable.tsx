@@ -13,7 +13,6 @@ const money = (n: string | number | null) =>
 
 export default function SalesByUserTable({ rows }: { rows: SalesByUserRow[] }) {
   const filters: FilterConfig<SalesByUserRow>[] = [
-    { type: "select", key: "store_name", label: "Store", value: (r) => r.store_name ?? "" },
     { type: "select", key: "user_name", label: "User", value: (r) => r.user_name ?? "" },
     { type: "numberMin", key: "discountPctMin", label: "Discount % ≥", value: (r) => Number(r.discount_pct) || 0 },
   ];
