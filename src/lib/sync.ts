@@ -1,8 +1,10 @@
 import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
+import { Readable } from "stream";
+import { from as copyFrom } from "pg-copy-streams";
 import { pool } from "./db";
 import { getDriveClient, getSheetsClient } from "./google-clients";
-import { parseInventoryCsv, dateFromFilename } from "./inventory-parser";
+import { parseInventoryCsv, dateFromFilename, type InventoryRow } from "./inventory-parser";
 import { parseDiscountsCsv } from "./discounts-parser";
 import { parseSalesCsv } from "./sales-parser";
 import { resolveStoreId, type StoreRef, type StoreAlias } from "./store-resolver";
@@ -101,6 +103,58 @@ async function downloadDriveFileText(fileId: string): Promise<string> {
   return Buffer.from(res.data as ArrayBuffer).toString("utf-8");
 }
 
+async function streamCopy(client: import("pg").PoolClient, sql: string, csvText: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const stream = client.query(copyFrom(sql));
+    const readable = Readable.from([csvText]);
+    readable.on("error", reject);
+    stream.on("error", reject);
+    stream.on("finish", resolve);
+    readable.pipe(stream);
+  });
+}
+
+/**
+ * Bulk-loads one file's inventory rows via COPY into a temp staging table,
+ * then a single set-based upsert into inventory_snapshots. A store's daily
+ * file can run into the thousands of rows — one COPY stream plus one INSERT
+ * is dramatically fewer round trips than the previous N-batches-of-500
+ * approach, which was the real reason large files were taking minutes
+ * instead of seconds (each batch is its own network round trip to RDS).
+ * Mirrors the proven approach in scripts/import-local-inventory.ts.
+ */
+async function copyUpsertInventorySnapshots(
+  client: import("pg").PoolClient,
+  storeId: string,
+  snapshotDate: string,
+  rows: InventoryRow[],
+): Promise<void> {
+  await client.query(`
+    create temporary table staging_inventory (
+      store_id uuid, snapshot_date date, sku text, style_code text, size_code text,
+      description text, vendor text, on_hand integer
+    ) on commit drop;
+  `);
+  const csvText = rowsToCsv(
+    rows.map((r) => [storeId, snapshotDate, r.sku, r.styleCode, r.sizeCode, r.description, r.vendor, String(r.onHand)]),
+  );
+  await streamCopy(
+    client,
+    "COPY staging_inventory (store_id, snapshot_date, sku, style_code, size_code, description, vendor, on_hand) FROM STDIN WITH (FORMAT csv)",
+    csvText,
+  );
+  await client.query(`
+    insert into inventory_snapshots (store_id, snapshot_date, sku, style_code, size_code, description, vendor, on_hand)
+    select distinct on (store_id, snapshot_date, sku)
+      store_id, snapshot_date, sku, style_code, size_code, description, vendor, on_hand
+    from staging_inventory
+    order by store_id, snapshot_date, sku, ctid desc
+    on conflict (store_id, snapshot_date, sku) do update set
+      style_code = excluded.style_code, size_code = excluded.size_code,
+      description = excluded.description, vendor = excluded.vendor, on_hand = excluded.on_hand
+  `);
+}
+
 async function syncInventoryFromDrive(
   rootFolderId: string | null,
   stores: StoreRef[],
@@ -196,14 +250,7 @@ async function syncInventoryFromDrive(
         const client = await pool.connect();
         try {
           await client.query("begin");
-          await batchUpsert(
-            client,
-            "inventory_snapshots",
-            ["store_id", "snapshot_date", "sku", "style_code", "size_code", "description", "vendor", "on_hand"],
-            ["store_id", "snapshot_date", "sku"],
-            ["style_code", "size_code", "description", "vendor", "on_hand"],
-            rows.map((r) => [storeId, snapshotDate, r.sku, r.styleCode, r.sizeCode, r.description, r.vendor, r.onHand]),
-          );
+          await copyUpsertInventorySnapshots(client, storeId, snapshotDate, rows);
           await client.query("commit");
         } catch (e) {
           await client.query("rollback");
@@ -305,14 +352,7 @@ async function syncInventoryFromLocalFolder(
         const client = await pool.connect();
         try {
           await client.query("begin");
-          await batchUpsert(
-            client,
-            "inventory_snapshots",
-            ["store_id", "snapshot_date", "sku", "style_code", "size_code", "description", "vendor", "on_hand"],
-            ["store_id", "snapshot_date", "sku"],
-            ["style_code", "size_code", "description", "vendor", "on_hand"],
-            rows.map((r) => [storeId, snapshotDate, r.sku, r.styleCode, r.sizeCode, r.description, r.vendor, r.onHand]),
-          );
+          await copyUpsertInventorySnapshots(client, storeId, snapshotDate, rows);
           await client.query("commit");
         } catch (e) {
           await client.query("rollback");
