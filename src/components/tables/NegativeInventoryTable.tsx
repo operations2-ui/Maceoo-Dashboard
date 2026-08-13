@@ -27,7 +27,7 @@ export default function NegativeInventoryTable({ rows }: { rows: NegativeInvento
           key: "on_hand",
           header: "On Hand",
           align: "right",
-          cellClassName: (r) => (r.on_hand < 0 ? "text-red-600 font-semibold" : ""),
+          cellClassName: (r) => (r.on_hand < 0 ? "text-red-600 dark:text-red-400 font-semibold" : ""),
         },
       ]}
     />

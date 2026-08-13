@@ -25,21 +25,39 @@ export default function StoreSalesChart({ rows }: { rows: Row[] }) {
   if (data.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 mb-6">
-      <h3 className="text-sm font-medium text-slate-700 mb-2">Sales &amp; Gross Margin by Store</h3>
+    <div className="chart-surface rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 mb-6">
+      <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Sales &amp; Gross Margin by Store</h3>
       <div style={{ height: 300 }}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="store" tick={{ fontSize: 12 }} />
-            <YAxis tick={{ fontSize: 12 }} tickFormatter={compactMoney} />
-            <Tooltip formatter={(v) => compactMoney(Number(v))} />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Bar dataKey="netSales" name="Net Sales" fill="#0f172a" radius={[4, 4, 0, 0]}>
-              <LabelList dataKey="netSales" position="top" formatter={(v) => compactMoney(Number(v))} style={{ fontSize: 10, fill: "#475569" }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+            <XAxis dataKey="store" tick={{ fontSize: 12, fill: "var(--chart-text)" }} />
+            <YAxis tick={{ fontSize: 12, fill: "var(--chart-text)" }} tickFormatter={compactMoney} />
+            <Tooltip
+              formatter={(v) => compactMoney(Number(v))}
+              contentStyle={{
+                background: "var(--tooltip-bg)",
+                border: "1px solid var(--chart-grid)",
+                borderRadius: 6,
+                fontSize: 12,
+              }}
+            />
+            <Legend wrapperStyle={{ fontSize: 12, color: "var(--chart-text-strong)" }} />
+            <Bar dataKey="netSales" name="Net Sales" fill="var(--chart-bar)" radius={[4, 4, 0, 0]}>
+              <LabelList
+                dataKey="netSales"
+                position="top"
+                formatter={(v) => compactMoney(Number(v))}
+                style={{ fontSize: 10, fill: "var(--chart-text-strong)" }}
+              />
             </Bar>
-            <Bar dataKey="grossMargin" name="Gross Margin" fill="#3b82f6" radius={[4, 4, 0, 0]}>
-              <LabelList dataKey="grossMargin" position="top" formatter={(v) => compactMoney(Number(v))} style={{ fontSize: 10, fill: "#475569" }} />
+            <Bar dataKey="grossMargin" name="Gross Margin" fill="var(--chart-series-2)" radius={[4, 4, 0, 0]}>
+              <LabelList
+                dataKey="grossMargin"
+                position="top"
+                formatter={(v) => compactMoney(Number(v))}
+                style={{ fontSize: 10, fill: "var(--chart-text-strong)" }}
+              />
             </Bar>
           </BarChart>
         </ResponsiveContainer>

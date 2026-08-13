@@ -22,8 +22,8 @@ export default async function SyncPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-slate-900 mb-1">Drive/Sheets Sync</h1>
-      <p className="text-sm text-slate-500 mb-4">
+      <h1 className="text-xl font-semibold text-slate-900 dark:text-white mb-1">Drive/Sheets Sync</h1>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
         Pulls the latest inventory CSVs from Drive and the Discounts/Sales Google Sheets directly, using the
         configured service account. Inventory folders are discovered automatically from whatever&apos;s shared
         with the service account (or under <code>DRIVE_ROOT_FOLDER_ID</code> if set); requires{" "}
@@ -32,7 +32,7 @@ export default async function SyncPage() {
       </p>
       <SyncNowButton />
       <LiveRunsRefresher active={hasRunning} />
-      <h2 className="text-sm font-medium text-slate-700 mb-2">Recent runs</h2>
+      <h2 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Recent runs</h2>
       <DataTable
         rows={rows}
         emptyMessage="No sync runs yet."
@@ -60,7 +60,9 @@ export default async function SyncPage() {
             header: "Note",
             render: (r) =>
               r.summary?.inventoryStoppedEarly ? (
-                <span className="text-amber-600">Inventory backfill incomplete — continues next sync</span>
+                <span className="text-amber-600 dark:text-amber-400">
+                  Inventory backfill incomplete — continues next sync
+                </span>
               ) : (
                 "—"
               ),

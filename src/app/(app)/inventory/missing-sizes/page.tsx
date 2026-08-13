@@ -20,8 +20,8 @@ export default async function MissingSizesPage({
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-slate-900 mb-1">Missing Sizes</h1>
-      <p className="text-sm text-slate-500 mb-4">
+      <h1 className="text-xl font-semibold text-slate-900 dark:text-white mb-1">Missing Sizes</h1>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
         Styles where a size in the middle of the run has no row at all in the current day&apos;s stock file
         (distinct from a size that&apos;s present with 0 on hand).
       </p>

@@ -22,7 +22,7 @@ export default function CancelRunButton({ runId }: { runId: number }) {
       type="button"
       onClick={cancel}
       disabled={loading}
-      className="text-xs text-red-600 hover:underline disabled:opacity-50"
+      className="text-xs text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
     >
       {loading ? "Stopping…" : "Stop"}
     </button>

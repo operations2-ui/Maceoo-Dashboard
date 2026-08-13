@@ -13,11 +13,11 @@ export function StoreDateFilter({
   return (
     <form method="get" className="flex flex-wrap items-end gap-3 mb-6">
       <div>
-        <label className="block text-xs font-medium text-slate-600 mb-1">Store</label>
+        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Store</label>
         <select
           name="store"
           defaultValue={store ?? stores[0]?.id ?? ""}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm min-w-[10rem]"
+          className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm min-w-[10rem]"
         >
           {stores.map((s) => (
             <option key={s.id} value={s.id}>
@@ -27,15 +27,15 @@ export function StoreDateFilter({
         </select>
       </div>
       <div>
-        <label className="block text-xs font-medium text-slate-600 mb-1">Date</label>
+        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Date</label>
         <input
           type="date"
           name="date"
           defaultValue={date ?? today}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+          className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm"
         />
       </div>
-      <button type="submit" className="rounded-md bg-slate-900 text-white text-sm font-medium px-4 py-1.5">
+      <button type="submit" className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5">
         Apply
       </button>
     </form>
@@ -58,11 +58,11 @@ export function StoreDateRangeFilter({
   return (
     <form method="get" className="flex flex-wrap items-end gap-3 mb-6">
       <div>
-        <label className="block text-xs font-medium text-slate-600 mb-1">Store</label>
+        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Store</label>
         <select
           name="store"
           defaultValue={store ?? "all"}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm min-w-[10rem]"
+          className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm min-w-[10rem]"
         >
           <option value="all">All stores</option>
           {stores.map((s) => (
@@ -73,24 +73,24 @@ export function StoreDateRangeFilter({
         </select>
       </div>
       <div>
-        <label className="block text-xs font-medium text-slate-600 mb-1">From</label>
+        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">From</label>
         <input
           type="date"
           name="from"
           defaultValue={from ?? monthAgo}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+          className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm"
         />
       </div>
       <div>
-        <label className="block text-xs font-medium text-slate-600 mb-1">To</label>
+        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">To</label>
         <input
           type="date"
           name="to"
           defaultValue={to ?? today}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+          className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm"
         />
       </div>
-      <button type="submit" className="rounded-md bg-slate-900 text-white text-sm font-medium px-4 py-1.5">
+      <button type="submit" className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5">
         Apply
       </button>
     </form>

@@ -1,36 +1,144 @@
-import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getAccessibleStores } from "@/lib/authz";
+import { getSales, getDiscounts, getInventoryAlertSummary, type SalesRow, type DiscountRow } from "@/lib/reports";
+import StatTile from "@/components/StatTile";
+import SalesByStoreBar from "@/components/SalesByStoreBar";
+import OverviewSalesTrend from "@/components/OverviewSalesTrend";
+import LeagueTable from "@/components/LeagueTable";
 
-const reports = [
-  { href: "/inventory/negative", title: "Negative Inventory", desc: "SKUs with negative on-hand quantity as of a given date." },
-  { href: "/inventory/sold-negative", title: "Prior-Day Oversell", desc: "Closing stock that's negative and lower than the day before." },
-  { href: "/inventory/missing-sizes", title: "Missing Sizes", desc: "Gaps in a style's size run for the current day's stock." },
-  { href: "/discounts", title: "Discounts", desc: "Discount usage by date, user, and discount name." },
-  { href: "/sales", title: "Sales", desc: "Day-wise sales matrix and trends." },
-];
+const PERIOD_DAYS = 30;
+const dayMs = 86_400_000;
+const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+
+const money = (n: number) =>
+  `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+function sumSales(rows: SalesRow[]) {
+  return rows.reduce(
+    (acc, r) => ({
+      orders: acc.orders + (r.total_orders ?? 0),
+      netSales: acc.netSales + Number(r.net_sales ?? 0),
+      grossMargin: acc.grossMargin + Number(r.gross_margin ?? 0),
+    }),
+    { orders: 0, netSales: 0, grossMargin: 0 },
+  );
+}
+
+const sumDiscounts = (rows: DiscountRow[]) => rows.reduce((sum, r) => sum + Number(r.total_discounts ?? 0), 0);
+
+/** % change vs the previous equal-length period; null when there's no baseline to compare against. */
+function pctDelta(curr: number, prev: number): number | null {
+  if (prev === 0) return null;
+  return ((curr - prev) / Math.abs(prev)) * 100;
+}
 
 export default async function Home() {
   const user = await getCurrentUser();
   const stores = await getAccessibleStores(user);
+  const storeIds = stores.map((s) => s.id);
+
+  const today = new Date();
+  const toDate = isoDate(today);
+  const fromDate = isoDate(new Date(today.getTime() - PERIOD_DAYS * dayMs));
+  const prevToDate = isoDate(new Date(today.getTime() - (PERIOD_DAYS + 1) * dayMs));
+  const prevFromDate = isoDate(new Date(today.getTime() - PERIOD_DAYS * 2 * dayMs));
+
+  const [salesRows, discountRows, prevSalesRows, prevDiscountRows, alerts] = await Promise.all([
+    getSales(storeIds, fromDate, toDate),
+    getDiscounts(storeIds, fromDate, toDate),
+    getSales(storeIds, prevFromDate, prevToDate),
+    getDiscounts(storeIds, prevFromDate, prevToDate),
+    getInventoryAlertSummary(storeIds),
+  ]);
+
+  const totals = sumSales(salesRows);
+  const prevTotals = sumSales(prevSalesRows);
+  const totalDiscounts = sumDiscounts(discountRows);
+  const prevTotalDiscounts = sumDiscounts(prevDiscountRows);
+  const avgOrderValue = totals.orders > 0 ? totals.netSales / totals.orders : 0;
+  const prevAvgOrderValue = prevTotals.orders > 0 ? prevTotals.netSales / prevTotals.orders : 0;
+
+  const byStore = new Map<string, number>();
+  for (const r of salesRows) byStore.set(r.store_name, (byStore.get(r.store_name) ?? 0) + Number(r.net_sales ?? 0));
+  const salesByStore = [...byStore.entries()].map(([store, value]) => ({ store, value }));
+
+  const byDate = new Map<string, number>();
+  for (const r of salesRows) byDate.set(r.order_date, (byDate.get(r.order_date) ?? 0) + Number(r.net_sales ?? 0));
+  const trend = [...byDate.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, value]) => ({ date: date.slice(5), value }));
+
+  const leagueRows = [...byStore.entries()]
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 8)
+    .map(([store, value], i) => ({ rank: i + 1, label: store, value: money(value) }));
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-slate-900 mb-1">Dashboard</h1>
-      <p className="text-sm text-slate-500 mb-6">
-        You have access to {stores.length} store{stores.length === 1 ? "" : "s"}.
+      <h1 className="text-xl font-semibold text-slate-900 dark:text-white mb-1">Overview</h1>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+        Last {PERIOD_DAYS} days across {stores.length} store{stores.length === 1 ? "" : "s"}.
       </p>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {reports.map((r) => (
-          <Link
-            key={r.href}
-            href={r.href}
-            className="block rounded-lg border border-slate-200 bg-white p-4 hover:border-slate-400 transition-colors"
-          >
-            <h2 className="font-medium text-slate-900">{r.title}</h2>
-            <p className="text-sm text-slate-500 mt-1">{r.desc}</p>
-          </Link>
-        ))}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+        <StatTile
+          label="Net sales"
+          value={money(totals.netSales)}
+          deltaPct={pctDelta(totals.netSales, prevTotals.netSales)}
+          sparkline={trend.map((t) => t.value)}
+        />
+        <StatTile
+          label="Total orders"
+          value={totals.orders.toLocaleString("en-US")}
+          deltaPct={pctDelta(totals.orders, prevTotals.orders)}
+        />
+        <StatTile
+          label="Gross margin"
+          value={money(totals.grossMargin)}
+          deltaPct={pctDelta(totals.grossMargin, prevTotals.grossMargin)}
+        />
+        <StatTile
+          label="Average order value"
+          value={money(avgOrderValue)}
+          deltaPct={pctDelta(avgOrderValue, prevAvgOrderValue)}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <StatTile
+          label="Discounts given"
+          value={money(totalDiscounts)}
+          deltaPct={pctDelta(totalDiscounts, prevTotalDiscounts)}
+          deltaGoodDirection="down"
+          href="/discounts"
+        />
+        <StatTile
+          label="Negative inventory"
+          value={alerts.negativeCount.toLocaleString("en-US")}
+          tone={alerts.negativeCount > 0 ? "critical" : "default"}
+          href="/inventory/negative"
+        />
+        <StatTile
+          label="Missing size styles"
+          value={alerts.missingSizeStyleCount.toLocaleString("en-US")}
+          tone={alerts.missingSizeStyleCount > 0 ? "warning" : "default"}
+          href="/inventory/missing-sizes"
+        />
+        <StatTile
+          label="Inventory as of"
+          value={alerts.latestDate ?? "—"}
+          href="/inventory/sold-negative"
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-4">
+          <OverviewSalesTrend rows={trend} />
+          <SalesByStoreBar rows={salesByStore} />
+        </div>
+        <div>
+          <LeagueTable title="Top stores by net sales" rows={leagueRows} />
+        </div>
       </div>
     </div>
   );

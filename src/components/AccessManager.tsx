@@ -60,14 +60,17 @@ export default function AccessManager({
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
+    <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-slate-200 bg-slate-50">
-            <th className="px-3 py-2 text-left font-medium text-slate-600">User</th>
-            <th className="px-3 py-2 text-left font-medium text-slate-600">Role</th>
+          <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
+            <th className="px-3 py-2 text-left font-medium text-slate-600 dark:text-slate-300">User</th>
+            <th className="px-3 py-2 text-left font-medium text-slate-600 dark:text-slate-300">Role</th>
             {stores.map((s) => (
-              <th key={s.id} className="px-3 py-2 text-center font-medium text-slate-600 whitespace-nowrap">
+              <th
+                key={s.id}
+                className="px-3 py-2 text-center font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap"
+              >
                 {s.name}
               </th>
             ))}
@@ -75,13 +78,15 @@ export default function AccessManager({
         </thead>
         <tbody>
           {profiles.map((p) => (
-            <tr key={p.user_id} className="border-b border-slate-100 last:border-0">
-              <td className="px-3 py-2 whitespace-nowrap">{p.email ?? p.full_name ?? p.user_id}</td>
+            <tr key={p.user_id} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+              <td className="px-3 py-2 whitespace-nowrap text-slate-700 dark:text-slate-300">
+                {p.email ?? p.full_name ?? p.user_id}
+              </td>
               <td className="px-3 py-2">
                 <select
                   value={roles[p.user_id]}
                   onChange={(e) => changeRole(p.user_id, e.target.value)}
-                  className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+                  className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-2 py-1 text-xs"
                 >
                   <option value="store_manager">store_manager</option>
                   <option value="admin">admin</option>

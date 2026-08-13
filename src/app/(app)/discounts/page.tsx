@@ -27,11 +27,11 @@ export default async function DiscountsPage({
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-slate-900 mb-1">Discounts</h1>
-      <p className="text-sm text-slate-500 mb-4">Discount usage by date, location, and user.</p>
+      <h1 className="text-xl font-semibold text-slate-900 dark:text-white mb-1">Discounts</h1>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Discount usage by date, location, and user.</p>
       <StoreDateRangeFilter stores={stores} store={store} from={fromDate} to={toDate} />
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-slate-600 dark:text-slate-400">
           <span className="font-medium">{rows.length.toLocaleString("en-US")}</span> discount
           {rows.length === 1 ? "" : "s"} totaling{" "}
           <span className="font-medium">

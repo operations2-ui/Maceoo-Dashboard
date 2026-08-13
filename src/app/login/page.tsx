@@ -36,8 +36,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-sm bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 px-4">
+      <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 p-6">
         <Image
           src="/logo.avif"
           alt="Maceoo"
@@ -47,49 +47,49 @@ export default function LoginPage() {
           unoptimized
           priority
         />
-        <h1 className="text-lg font-semibold text-slate-900 mb-1">Maceoo Dashboard</h1>
-        <p className="text-sm text-slate-500 mb-6">
+        <h1 className="text-lg font-semibold text-slate-900 dark:text-white mb-1">Maceoo Dashboard</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
           {mode === "signin" ? "Sign in to continue" : "Create an account"}
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === "signup" && (
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Full name</label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Full name</label>
               <input
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                className="w-full rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-2 text-sm"
               />
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
             <input
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              className="w-full rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-2 text-sm"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Password</label>
             <input
               type="password"
               required
               minLength={6}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              className="w-full rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-2 text-sm"
             />
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-md bg-slate-900 text-white text-sm font-medium py-2 disabled:opacity-50"
+            className="w-full rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium py-2 disabled:opacity-50"
           >
             {loading ? "Please wait…" : mode === "signin" ? "Sign in" : "Sign up"}
           </button>
@@ -101,7 +101,7 @@ export default function LoginPage() {
             setMode(mode === "signin" ? "signup" : "signin");
             setError(null);
           }}
-          className="mt-4 text-sm text-slate-500 hover:text-slate-700"
+          className="mt-4 text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
         >
           {mode === "signin" ? "Need an account? Sign up" : "Already have an account? Sign in"}
         </button>

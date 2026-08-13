@@ -26,7 +26,7 @@ export default function SoldNegativeTable({ rows }: { rows: SoldNegativeRow[] })
           key: "curr_on_hand",
           header: "Curr On Hand",
           align: "right",
-          cellClassName: () => "text-red-600 font-semibold",
+          cellClassName: () => "text-red-600 dark:text-red-400 font-semibold",
         },
         { key: "items_sold", header: "Items Sold", align: "right" },
       ]}

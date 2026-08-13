@@ -36,7 +36,7 @@ export default function SalesTable({ rows }: { rows: SalesRow[] }) {
           header: "Net Sales",
           align: "right",
           render: (r) => money(r.net_sales),
-          cellClassName: (r) => (Number(r.net_sales) < 0 ? "text-red-600" : ""),
+          cellClassName: (r) => (Number(r.net_sales) < 0 ? "text-red-600 dark:text-red-400" : ""),
         },
         { key: "taxes", header: "Taxes", align: "right", render: (r) => money(r.taxes) },
         { key: "shipping", header: "Shipping", align: "right", render: (r) => money(r.shipping) },
@@ -47,7 +47,7 @@ export default function SalesTable({ rows }: { rows: SalesRow[] }) {
           header: "Gross Margin",
           align: "right",
           render: (r) => money(r.gross_margin),
-          cellClassName: (r) => (Number(r.gross_margin) < 0 ? "text-red-600" : ""),
+          cellClassName: (r) => (Number(r.gross_margin) < 0 ? "text-red-600 dark:text-red-400" : ""),
         },
       ]}
     />

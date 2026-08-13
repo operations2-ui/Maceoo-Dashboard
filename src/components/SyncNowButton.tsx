@@ -70,7 +70,7 @@ export default function SyncNowButton() {
           type="button"
           onClick={run}
           disabled={loading}
-          className="rounded-md bg-slate-900 text-white text-sm font-medium px-4 py-2 disabled:opacity-50"
+          className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 disabled:opacity-50"
         >
           {loading ? "Syncing…" : "Sync now"}
         </button>
@@ -79,15 +79,15 @@ export default function SyncNowButton() {
             type="button"
             onClick={cancel}
             disabled={cancelling}
-            className="rounded-md border border-red-300 text-red-600 text-sm font-medium px-3 py-2 disabled:opacity-50"
+            className="rounded-md border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 text-sm font-medium px-3 py-2 disabled:opacity-50"
           >
             {cancelling ? "Stopping…" : "Stop"}
           </button>
         )}
       </div>
-      {loading && progress && <p className="mt-2 text-xs text-slate-500">{progress}</p>}
+      {loading && progress && <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{progress}</p>}
       {result != null && (
-        <pre className="mt-3 text-xs bg-slate-50 border border-slate-200 rounded-md p-3 overflow-x-auto max-h-96">
+        <pre className="mt-3 text-xs bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 rounded-md p-3 overflow-x-auto max-h-96">
           {JSON.stringify(result, null, 2)}
         </pre>
       )}

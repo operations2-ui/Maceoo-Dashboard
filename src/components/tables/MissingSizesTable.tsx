@@ -22,10 +22,10 @@ function ExpandedDetail({ row }: { row: MissingSizeRow }) {
 
   return (
     <tr>
-      <td colSpan={5} className="bg-slate-50 px-4 py-3">
+      <td colSpan={5} className="bg-slate-50 dark:bg-slate-800 px-4 py-3">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-slate-500">
+            <tr className="text-left text-slate-500 dark:text-slate-400">
               <th className="pr-4 py-1 font-medium">Size</th>
               <th className="pr-4 py-1 font-medium">SKU</th>
               <th className="pr-4 py-1 font-medium">Description</th>
@@ -34,7 +34,7 @@ function ExpandedDetail({ row }: { row: MissingSizeRow }) {
           </thead>
           <tbody>
             {detail.map((d) => (
-              <tr key={d.size} className={d.missing ? "text-red-600" : "text-slate-700"}>
+              <tr key={d.size} className={d.missing ? "text-red-600 dark:text-red-400" : "text-slate-700 dark:text-slate-300"}>
                 <td className="pr-4 py-1 font-medium">{d.size}</td>
                 <td className="pr-4 py-1">{d.missing ? "— no SKU on file —" : d.sku}</td>
                 <td className="pr-4 py-1">{d.missing ? "—" : d.description}</td>
@@ -76,41 +76,41 @@ export default function MissingSizesTable({ rows }: { rows: MissingSizeRow[] }) 
     <div>
       <div className="flex flex-wrap items-end gap-3 mb-3">
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Search</label>
+          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Search</label>
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search style or size..."
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm w-56"
+            className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm w-56"
           />
         </div>
-        <span className="text-sm text-slate-500 ml-auto">
+        <span className="text-sm text-slate-500 dark:text-slate-400 ml-auto">
           {search ? `${filteredRows.length.toLocaleString("en-US")} of ${rows.length.toLocaleString("en-US")}` : rows.length.toLocaleString("en-US")}{" "}
           rows
         </span>
       </div>
 
       {filteredRows.length === 0 ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+        <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center text-sm text-slate-500 dark:text-slate-400">
           No missing-size gaps for this store and date.
         </div>
       ) : (
-        <div className="rounded-lg border border-slate-200 bg-white overflow-auto max-h-[70vh]">
+        <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-auto max-h-[70vh]">
           <table className="w-full text-sm border-collapse">
             <thead className="sticky top-0 z-10">
-              <tr className="border-b border-slate-200 bg-slate-50">
-                <th className="px-3 py-2 font-semibold text-slate-600 whitespace-nowrap w-8"></th>
-                <th className="px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap bg-slate-50">
+              <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
+                <th className="px-3 py-2 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap w-8"></th>
+                <th className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap bg-slate-50 dark:bg-slate-800">
                   Style
                 </th>
-                <th className="px-3 py-2 text-right font-semibold text-slate-600 whitespace-nowrap bg-slate-50">
+                <th className="px-3 py-2 text-right font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap bg-slate-50 dark:bg-slate-800">
                   Min Size
                 </th>
-                <th className="px-3 py-2 text-right font-semibold text-slate-600 whitespace-nowrap bg-slate-50">
+                <th className="px-3 py-2 text-right font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap bg-slate-50 dark:bg-slate-800">
                   Max Size
                 </th>
-                <th className="px-3 py-2 text-left font-semibold text-slate-600 whitespace-nowrap bg-slate-50">
+                <th className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap bg-slate-50 dark:bg-slate-800">
                   Missing Sizes
                 </th>
               </tr>
@@ -120,13 +120,19 @@ export default function MissingSizesTable({ rows }: { rows: MissingSizeRow[] }) 
                 <Fragment key={r.style_code}>
                   <tr
                     onClick={() => toggle(r.style_code)}
-                    className="border-b border-slate-100 odd:bg-white even:bg-slate-50/60 hover:bg-blue-50/60 transition-colors cursor-pointer"
+                    className="border-b border-slate-100 dark:border-slate-800 odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-800/40 hover:bg-blue-50/60 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                   >
-                    <td className="px-3 py-2 text-slate-400">{expanded.has(r.style_code) ? "▼" : "▶"}</td>
-                    <td className="px-3 py-2 whitespace-nowrap font-medium text-slate-900">{r.style_code}</td>
+                    <td className="px-3 py-2 text-slate-400 dark:text-slate-500">
+                      {expanded.has(r.style_code) ? "▼" : "▶"}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap font-medium text-slate-900 dark:text-white">
+                      {r.style_code}
+                    </td>
                     <td className="px-3 py-2 text-right tabular-nums">{r.min_size}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{r.max_size}</td>
-                    <td className="px-3 py-2 text-red-600 font-semibold">{(r.missing_sizes ?? []).join(", ")}</td>
+                    <td className="px-3 py-2 text-red-600 dark:text-red-400 font-semibold">
+                      {(r.missing_sizes ?? []).join(", ")}
+                    </td>
                   </tr>
                   {expanded.has(r.style_code) && <ExpandedDetail row={r} />}
                 </Fragment>

@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Class-based dark mode: toggled by adding/removing `.dark` on <html> via
+   ThemeToggle, instead of only following the OS setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -12,15 +16,45 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.dark {
+  --background: #020617;
+  --foreground: #f8fafc;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Chart color tokens (colorblind-validated palette). Recharts elements read
+   these via var(--x) presentation-attribute strings, so toggling `.dark` on
+   <html> repaints every chart through the CSS cascade with no re-render. */
+.chart-surface {
+  --tooltip-bg: #fcfcfb;
+  --chart-grid: #e1e0d9;
+  --chart-baseline: #c3c2b7;
+  --chart-text: #898781;
+  --chart-text-strong: #52514e;
+  --chart-line: #2a78d6;
+  --chart-line-fill: rgba(42, 120, 214, 0.1);
+  --chart-bar: #2a78d6;
+  --chart-series-2: #eb6834;
+  --chart-status-good: #0ca30c;
+  --chart-status-warning: #fab219;
+  --chart-status-critical: #d03b3b;
+}
+.dark .chart-surface {
+  --tooltip-bg: #1a1a19;
+  --chart-grid: #2c2c2a;
+  --chart-baseline: #383835;
+  --chart-text: #898781;
+  --chart-text-strong: #c3c2b7;
+  --chart-line: #3987e5;
+  --chart-line-fill: rgba(57, 135, 229, 0.14);
+  --chart-bar: #3987e5;
+  --chart-series-2: #d95926;
+  --chart-status-good: #0ca30c;
+  --chart-status-warning: #fab219;
+  --chart-status-critical: #e66767;
 }

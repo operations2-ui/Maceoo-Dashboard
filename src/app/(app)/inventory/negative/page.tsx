@@ -20,8 +20,10 @@ export default async function NegativeInventoryPage({
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-slate-900 mb-1">Negative Inventory</h1>
-      <p className="text-sm text-slate-500 mb-4">SKUs with negative on-hand quantity as of the selected date.</p>
+      <h1 className="text-xl font-semibold text-slate-900 dark:text-white mb-1">Negative Inventory</h1>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+        SKUs with negative on-hand quantity as of the selected date.
+      </p>
       <StoreDateFilter stores={stores} store={storeId} date={snapshotDate} />
       {rows.length > 0 && storeId && (
         <div className="flex justify-end mb-2">

@@ -73,23 +73,23 @@ export default function FilterableTable<T extends Record<string, unknown>>({
     <div>
       <div className="flex flex-wrap items-end gap-3 mb-3">
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Search</label>
+          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Search</label>
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={searchPlaceholder}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm w-56"
+            className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm w-56"
           />
         </div>
         {filters.map((f) =>
           f.type === "select" ? (
             <div key={f.key}>
-              <label className="block text-xs font-medium text-slate-600 mb-1">{f.label}</label>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{f.label}</label>
               <select
                 value={selectValues[f.key] ?? ""}
                 onChange={(e) => setSelectValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-2 py-1.5 text-sm"
               >
                 <option value="">All</option>
                 {(selectOptions[f.key] ?? []).map((opt) => (
@@ -101,12 +101,12 @@ export default function FilterableTable<T extends Record<string, unknown>>({
             </div>
           ) : (
             <div key={f.key}>
-              <label className="block text-xs font-medium text-slate-600 mb-1">{f.label}</label>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{f.label}</label>
               <input
                 type="number"
                 value={numberValues[f.key] ?? ""}
                 onChange={(e) => setNumberValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                className="rounded-md border border-slate-300 px-2 py-1.5 text-sm w-28"
+                className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-2 py-1.5 text-sm w-28"
               />
             </div>
           ),
@@ -119,12 +119,12 @@ export default function FilterableTable<T extends Record<string, unknown>>({
               setSelectValues({});
               setNumberValues({});
             }}
-            className="text-sm text-slate-500 hover:text-slate-700 underline"
+            className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 underline"
           >
             Clear filters
           </button>
         )}
-        <span className="text-sm text-slate-500 ml-auto">
+        <span className="text-sm text-slate-500 dark:text-slate-400 ml-auto">
           {hasActiveFilters ? (
             <>
               {filteredRows.length.toLocaleString("en-US")} of {rows.length.toLocaleString("en-US")} rows

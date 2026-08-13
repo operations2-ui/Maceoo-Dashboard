@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import SignOutButton from "./SignOutButton";
+import ThemeToggle from "./ThemeToggle";
 
 const links = [
   { href: "/inventory/negative", label: "Negative Inventory" },
@@ -12,7 +13,7 @@ const links = [
 
 export default function NavBar({ isAdmin, email }: { isAdmin: boolean; email?: string }) {
   return (
-    <header className="border-b border-slate-200 bg-white" suppressHydrationWarning>
+    <header className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900" suppressHydrationWarning>
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
         <Link href="/" className="flex items-center gap-2 shrink-0">
           <Image
@@ -24,33 +25,50 @@ export default function NavBar({ isAdmin, email }: { isAdmin: boolean; email?: s
             unoptimized
             priority
           />
-          <span className="font-semibold text-slate-900">Maceoo Dashboard</span>
+          <span className="font-semibold text-slate-900 dark:text-white">Maceoo Dashboard</span>
         </Link>
         <nav className="flex items-center gap-4 flex-wrap text-sm">
           {links.map((l) => (
-            <Link key={l.href} href={l.href} className="text-slate-600 hover:text-slate-900">
+            <Link
+              key={l.href}
+              href={l.href}
+              className="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+            >
               {l.label}
             </Link>
           ))}
           {isAdmin && (
             <>
-              <Link href="/admin/import" className="text-slate-600 hover:text-slate-900">
+              <Link
+                href="/admin/import"
+                className="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              >
                 Admin Import
               </Link>
-              <Link href="/admin/stores" className="text-slate-600 hover:text-slate-900">
+              <Link
+                href="/admin/stores"
+                className="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              >
                 Users &amp; Access
               </Link>
-              <Link href="/admin/store-master" className="text-slate-600 hover:text-slate-900">
+              <Link
+                href="/admin/store-master"
+                className="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              >
                 Store Master
               </Link>
-              <Link href="/admin/sync" className="text-slate-600 hover:text-slate-900">
+              <Link
+                href="/admin/sync"
+                className="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              >
                 Sync
               </Link>
             </>
           )}
         </nav>
         <div className="flex items-center gap-3 shrink-0">
-          {email && <span className="text-xs text-slate-400">{email}</span>}
+          {email && <span className="text-xs text-slate-400 dark:text-slate-500">{email}</span>}
+          <ThemeToggle />
           <SignOutButton />
         </div>
       </div>

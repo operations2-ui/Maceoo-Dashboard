@@ -20,21 +20,21 @@ export default function DataTable<T extends Record<string, unknown>>({
 }) {
   if (rows.length === 0) {
     return (
-      <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+      <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center text-sm text-slate-500 dark:text-slate-400">
         {emptyMessage}
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white overflow-auto max-h-[70vh]">
+    <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-auto max-h-[70vh]">
       <table className="w-full text-sm border-collapse">
         <thead className="sticky top-0 z-10">
-          <tr className="border-b border-slate-200 bg-slate-50">
+          <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
             {columns.map((c) => (
               <th
                 key={c.key}
-                className={`px-3 py-2 font-semibold text-slate-600 whitespace-nowrap bg-slate-50 ${
+                className={`px-3 py-2 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap bg-slate-50 dark:bg-slate-800 ${
                   c.align === "right" ? "text-right" : "text-left"
                 }`}
               >
@@ -45,7 +45,10 @@ export default function DataTable<T extends Record<string, unknown>>({
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-slate-100 last:border-0 odd:bg-white even:bg-slate-50/60 hover:bg-blue-50/60 transition-colors">
+            <tr
+              key={i}
+              className="border-b border-slate-100 dark:border-slate-800 last:border-0 odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-800/40 hover:bg-blue-50/60 dark:hover:bg-slate-800 transition-colors"
+            >
               {columns.map((c) => {
                 const rawValue = row[c.key];
                 const extra = c.cellClassName ? c.cellClassName(row) : "";

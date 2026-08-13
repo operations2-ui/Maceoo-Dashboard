@@ -100,6 +100,34 @@ export interface SalesRow {
   gross_margin: string | null;
 }
 
+export interface InventoryAlertSummary {
+  latestDate: string | null;
+  negativeCount: number;
+  missingSizeStyleCount: number;
+}
+
+/** Snapshot of today's operational alerts across all accessible stores, for the Overview dashboard. */
+export async function getInventoryAlertSummary(storeIds: string[]): Promise<InventoryAlertSummary> {
+  if (storeIds.length === 0) return { latestDate: null, negativeCount: 0, missingSizeStyleCount: 0 };
+
+  const { rows: dateRows } = await pool.query(
+    "select to_char(max(snapshot_date), 'YYYY-MM-DD') as latest from inventory_snapshots where store_id = any($1::uuid[])",
+    [storeIds],
+  );
+  const latestDate: string | null = dateRows[0]?.latest ?? null;
+  if (!latestDate) return { latestDate: null, negativeCount: 0, missingSizeStyleCount: 0 };
+
+  const { rows: negRows } = await pool.query(
+    "select count(*)::int as c from inventory_snapshots where store_id = any($1::uuid[]) and snapshot_date = $2 and on_hand < 0",
+    [storeIds, latestDate],
+  );
+
+  const missingByStore = await Promise.all(storeIds.map((id) => getMissingSizes(id, latestDate)));
+  const missingSizeStyleCount = missingByStore.reduce((sum, rows) => sum + rows.length, 0);
+
+  return { latestDate, negativeCount: negRows[0]?.c ?? 0, missingSizeStyleCount };
+}
+
 export async function getSales(storeIds: string[], fromDate: string, toDate: string): Promise<SalesRow[]> {
   if (storeIds.length === 0) return [];
   const { rows } = await pool.query(

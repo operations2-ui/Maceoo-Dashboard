@@ -15,8 +15,8 @@ export default async function AdminStoresPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-slate-900 mb-1">Admin: Users &amp; Store Access</h1>
-      <p className="text-sm text-slate-500 mb-6">
+      <h1 className="text-xl font-semibold text-slate-900 dark:text-white mb-1">Admin: Users &amp; Store Access</h1>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
         Set each user&apos;s role and which stores they can see. Admins see every store automatically.
       </p>
       <AccessManager profiles={profiles} stores={stores} initialAccess={access} />

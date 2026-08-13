@@ -6,7 +6,7 @@ import type { AccessibleStore } from "@/lib/authz";
 function ResultBox({ result }: { result: unknown }) {
   if (!result) return null;
   return (
-    <pre className="mt-3 text-xs bg-slate-50 border border-slate-200 rounded-md p-3 overflow-x-auto">
+    <pre className="mt-3 text-xs bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 rounded-md p-3 overflow-x-auto">
       {JSON.stringify(result, null, 2)}
     </pre>
   );
@@ -34,19 +34,19 @@ export function InventoryImportForm({ stores }: { stores: AccessibleStore[] }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
-      <h3 className="font-medium text-slate-900">Daily Inventory CSV</h3>
-      <p className="text-xs text-slate-500">
+    <form onSubmit={handleSubmit} className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
+      <h3 className="font-medium text-slate-900 dark:text-white">Daily Inventory CSV</h3>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
         Upload one store&apos;s daily &quot;Physical Inventory Worksheet&quot; CSV. The date is read from the
         file&apos;s &quot;As of&quot; line unless you override it below.
       </p>
       <div className="flex flex-wrap gap-3 items-end">
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Store</label>
+          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Store</label>
           <select
             value={storeId}
             onChange={(e) => setStoreId(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+            className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm"
           >
             {stores.map((s) => (
               <option key={s.id} value={s.id}>
@@ -56,27 +56,27 @@ export function InventoryImportForm({ stores }: { stores: AccessibleStore[] }) {
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Date override (optional)</label>
+          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Date override (optional)</label>
           <input
             type="date"
             value={asOfDate}
             onChange={(e) => setAsOfDate(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+            className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm"
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">CSV file</label>
+          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">CSV file</label>
           <input
             type="file"
             accept=".csv"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="text-sm"
+            className="text-sm text-slate-700 dark:text-slate-300"
           />
         </div>
         <button
           type="submit"
           disabled={loading || !file}
-          className="rounded-md bg-slate-900 text-white text-sm font-medium px-4 py-1.5 disabled:opacity-50"
+          className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 disabled:opacity-50"
         >
           {loading ? "Importing…" : "Import"}
         </button>
@@ -104,23 +104,23 @@ function SheetImportForm({ title, description, endpoint }: { title: string; desc
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
-      <h3 className="font-medium text-slate-900">{title}</h3>
-      <p className="text-xs text-slate-500">{description}</p>
+    <form onSubmit={handleSubmit} className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
+      <h3 className="font-medium text-slate-900 dark:text-white">{title}</h3>
+      <p className="text-xs text-slate-500 dark:text-slate-400">{description}</p>
       <div className="flex flex-wrap gap-3 items-end">
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">CSV file</label>
+          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">CSV file</label>
           <input
             type="file"
             accept=".csv"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="text-sm"
+            className="text-sm text-slate-700 dark:text-slate-300"
           />
         </div>
         <button
           type="submit"
           disabled={loading || !file}
-          className="rounded-md bg-slate-900 text-white text-sm font-medium px-4 py-1.5 disabled:opacity-50"
+          className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 disabled:opacity-50"
         >
           {loading ? "Importing…" : "Import"}
         </button>

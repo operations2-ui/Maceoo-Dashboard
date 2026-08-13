@@ -45,8 +45,10 @@ export default async function SalesPage({
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-slate-900 mb-1">Sales</h1>
-      <p className="text-sm text-slate-500 mb-4">Day-wise sales matrix for the selected store(s) and period.</p>
+      <h1 className="text-xl font-semibold text-slate-900 dark:text-white mb-1">Sales</h1>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+        Day-wise sales matrix for the selected store(s) and period.
+      </p>
       <StoreDateRangeFilter stores={stores} store={store} from={fromDate} to={toDate} />
 
       {rows.length > 0 && (
@@ -56,19 +58,25 @@ export default async function SalesPage({
       )}
 
       <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-xs text-slate-500">Total Orders</p>
-          <p className="text-xl font-semibold text-slate-900">{totals.orders.toLocaleString("en-US")}</p>
+        <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+          <p className="text-xs text-slate-500 dark:text-slate-400">Total Orders</p>
+          <p className="text-xl font-semibold text-slate-900 dark:text-white">
+            {totals.orders.toLocaleString("en-US")}
+          </p>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-xs text-slate-500">Net Sales</p>
-          <p className={`text-xl font-semibold ${totals.netSales < 0 ? "text-red-600" : "text-slate-900"}`}>
+        <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+          <p className="text-xs text-slate-500 dark:text-slate-400">Net Sales</p>
+          <p
+            className={`text-xl font-semibold ${totals.netSales < 0 ? "text-red-600 dark:text-red-400" : "text-slate-900 dark:text-white"}`}
+          >
             {money(totals.netSales)}
           </p>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-xs text-slate-500">Gross Margin</p>
-          <p className={`text-xl font-semibold ${totals.grossMargin < 0 ? "text-red-600" : "text-slate-900"}`}>
+        <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+          <p className="text-xs text-slate-500 dark:text-slate-400">Gross Margin</p>
+          <p
+            className={`text-xl font-semibold ${totals.grossMargin < 0 ? "text-red-600 dark:text-red-400" : "text-slate-900 dark:text-white"}`}
+          >
             {money(totals.grossMargin)}
           </p>
         </div>
