@@ -10,6 +10,7 @@ const links = [
   { href: "/inventory/sold-negative", label: "Prior-Day Oversell" },
   { href: "/inventory/missing-sizes", label: "Missing Sizes" },
   { href: "/sales", label: "Sales" },
+  { href: "/discounts-analysis", label: "Discounts Analysis" },
 ];
 
 const adminLinks = [

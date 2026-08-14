@@ -4,6 +4,8 @@ import { parseFlexibleDate } from "./date-utils";
 export interface SalesRow {
   locationName: string;
   orderDate: string;
+  /** Globally unique per order. Empty on old-format sheets without this column. */
+  orderName: string;
   /** User the row's orders are attributed to. Empty on old-format sheets without this column. */
   userName: string;
   /** Comma-separated discount names applied to this slice of orders, or "" if none. */
@@ -27,10 +29,10 @@ export interface SalesRow {
  * summing all of a day's rows reproduces the old day-level totals, and rows
  * with a non-empty discount combo double as the discount-usage detail
  * (replacing the separate Discounts sheet).
- * Columns: Location Name, DAY Order Date, Order User name, Order Discount
- * names, Total orders, Total gross sales, Total discounts, Total refunds,
- * Total net sales, Total taxes, Total shipping, Total sales, Total cost of
- * goods sold, Total gross margin.
+ * Columns: Location Name, Order name, DAY Order Date, Order User name,
+ * Order Discount names, Total orders, Total gross sales, Total discounts,
+ * Total refunds, Total net sales, Total taxes, Total shipping, Total sales,
+ * Total cost of goods sold, Total gross margin.
  */
 export function parseSalesCsv(csvText: string): SalesRow[] {
   const rows = parseRawCsv(csvText);
@@ -52,6 +54,7 @@ export function parseSalesCsv(csvText: string): SalesRow[] {
     result.push({
       locationName: lastLocationName,
       orderDate: parseFlexibleDate(dateRaw),
+      orderName: cell(row, headerIndex, "Order name"),
       userName: cell(row, headerIndex, "Order User name"),
       discountNames: cell(row, headerIndex, "Order Discount names"),
       totalOrders: intOrNull(cell(row, headerIndex, "Total orders")),

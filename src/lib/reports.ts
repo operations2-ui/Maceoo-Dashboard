@@ -207,3 +207,117 @@ export async function getSalesByUser(storeIds: string[], fromDate: string, toDat
   );
   return rows;
 }
+
+export interface SalesOrderRow {
+  [key: string]: unknown;
+  store_name: string;
+  order_name: string;
+  day_date: string;
+  user_name: string;
+  gross_sales: string | null;
+  discounts: string | null;
+  refunds: string | null;
+  net_sales: string | null;
+  discount_pct: string | null;
+}
+
+/** Report 1: per-order detail — Location, Order Name, Date, User, Gross Sales, Discounts, Refunds, Net Sales, Discount %. */
+export async function getSalesOrders(storeIds: string[], fromDate: string, toDate: string): Promise<SalesOrderRow[]> {
+  if (storeIds.length === 0) return [];
+  const { rows } = await pool.query(
+    `select s.name as store_name, o.order_name, to_char(o.day_date, 'YYYY-MM-DD') as day_date, o.user_name,
+            o.gross_sales, o.discounts, o.refunds, o.net_sales,
+            case when o.gross_sales > 0 then round((o.discounts / o.gross_sales) * 100, 1) else null end as discount_pct
+     from sales_orders o
+     join stores s on s.id = o.store_id
+     where o.store_id = any($1::uuid[]) and o.day_date >= $2 and o.day_date <= $3
+     order by o.day_date desc, o.order_name desc`,
+    [storeIds, fromDate, toDate],
+  );
+  return rows;
+}
+
+export interface DiscountBucketRow {
+  [key: string]: unknown;
+  bucket: string;
+  orders: number;
+  total_discounts: string;
+  total_gross_sales: string;
+  users: string[];
+}
+
+/** Report 2: orders bucketed by discount % of gross sales (0-5%, 5-10%, ... 25%+). */
+export async function getDiscountBuckets(storeIds: string[], fromDate: string, toDate: string): Promise<DiscountBucketRow[]> {
+  if (storeIds.length === 0) return [];
+  const { rows } = await pool.query(
+    `with order_pct as (
+       select o.*, (o.discounts / o.gross_sales) * 100 as pct
+       from sales_orders o
+       where o.store_id = any($1::uuid[]) and o.day_date >= $2 and o.day_date <= $3 and o.gross_sales > 0
+     ),
+     bucketed as (
+       select *,
+         case
+           when pct < 5 then '0-5%'
+           when pct < 10 then '5-10%'
+           when pct < 15 then '10-15%'
+           when pct < 20 then '15-20%'
+           when pct < 25 then '20-25%'
+           else '25%+'
+         end as bucket,
+         case
+           when pct < 5 then 1 when pct < 10 then 2 when pct < 15 then 3
+           when pct < 20 then 4 when pct < 25 then 5 else 6
+         end as bucket_order
+       from order_pct
+     )
+     select bucket, count(*)::int as orders, sum(discounts) as total_discounts, sum(gross_sales) as total_gross_sales,
+            coalesce(array_agg(distinct user_name order by user_name) filter (where user_name <> ''), '{}') as users
+     from bucketed
+     group by bucket, bucket_order
+     order by bucket_order`,
+    [storeIds, fromDate, toDate],
+  );
+  return rows;
+}
+
+export interface EmployeeSummaryRow {
+  [key: string]: unknown;
+  user_name: string;
+  total_orders: number;
+  gross_sales: string;
+  discounts: string;
+  refunds: string;
+  net_sales: string;
+  discounts_over_15: string | null;
+  orders_over_15: number | null;
+  gross_sales_over_15: string | null;
+}
+
+/** Report 3: employee-wise summary, plus the subset of each employee's orders that had >15% discount. */
+export async function getEmployeeSummary(storeIds: string[], fromDate: string, toDate: string): Promise<EmployeeSummaryRow[]> {
+  if (storeIds.length === 0) return [];
+  const { rows } = await pool.query(
+    `with orders as (
+       select *, case when gross_sales > 0 then (discounts / gross_sales) * 100 else 0 end as pct
+       from sales_orders
+       where store_id = any($1::uuid[]) and day_date >= $2 and day_date <= $3
+     )
+     select
+       user_name,
+       sum(total_orders)::int as total_orders,
+       sum(gross_sales) as gross_sales,
+       sum(discounts) as discounts,
+       sum(refunds) as refunds,
+       sum(net_sales) as net_sales,
+       sum(discounts) filter (where pct > 15) as discounts_over_15,
+       sum(total_orders) filter (where pct > 15)::int as orders_over_15,
+       sum(gross_sales) filter (where pct > 15) as gross_sales_over_15
+     from orders
+     where user_name <> ''
+     group by user_name
+     order by gross_sales desc`,
+    [storeIds, fromDate, toDate],
+  );
+  return rows;
+}

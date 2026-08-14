@@ -472,6 +472,7 @@ async function syncSalesFromSheet(
   const dailyTotals = new Map<string, DailyTotal>();
   const userTotals = new Map<string, UserDailyTotal>();
   const discountTotals = new Map<string, DiscountTotal>();
+  const orderUpsertRows: unknown[][] = [];
   let matchedRowCount = 0;
   let discountedRowCount = 0;
 
@@ -482,6 +483,31 @@ async function syncSalesFromSheet(
       continue;
     }
     matchedRowCount++;
+
+    // True per-order detail, kept separately from the aggregated tables
+    // below — the Discounts Analysis reports need to see individual orders
+    // (e.g. "which orders had >15% discount"), which the aggregates can't
+    // answer once summed together. Order name is confirmed globally unique
+    // in the sheet; skip rows without one (older sheet exports).
+    if (r.orderName) {
+      orderUpsertRows.push([
+        storeId,
+        r.orderName,
+        r.orderDate,
+        r.userName,
+        r.discountNames,
+        r.totalOrders,
+        r.grossSales,
+        r.discounts,
+        r.refunds,
+        r.netSales,
+        r.taxes,
+        r.shipping,
+        r.totalSales,
+        r.cogs,
+        r.grossMargin,
+      ]);
+    }
 
     const key = `${storeId}|${r.orderDate}`;
     let day = dailyTotals.get(key);
@@ -642,6 +668,23 @@ async function syncSalesFromSheet(
       ],
       userSalesUpsertRows,
     );
+    if (orderUpsertRows.length > 0) {
+      await batchUpsert(
+        client,
+        "sales_orders",
+        [
+          "store_id", "order_name", "day_date", "user_name", "discount_name", "total_orders",
+          "gross_sales", "discounts", "refunds", "net_sales", "taxes", "shipping", "total_sales",
+          "cogs", "gross_margin",
+        ],
+        ["order_name"],
+        [
+          "store_id", "day_date", "user_name", "discount_name", "total_orders", "gross_sales",
+          "discounts", "refunds", "net_sales", "taxes", "shipping", "total_sales", "cogs", "gross_margin",
+        ],
+        orderUpsertRows,
+      );
+    }
     if (discountUpsertRows.length > 0) {
       await batchUpsert(
         client,
