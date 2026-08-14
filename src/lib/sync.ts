@@ -436,6 +436,15 @@ interface UserDailyTotal extends DailyTotal {
   userName: string;
 }
 
+interface DiscountTotal {
+  storeId: string;
+  date: string;
+  userName: string;
+  discountName: string;
+  totalDiscounts: number;
+  totalOrders: number;
+}
+
 /**
  * The Sales sheet now doubles as the Discounts source: each store/day is
  * broken into one row per (user, discount-name combination) slice of that
@@ -462,8 +471,9 @@ async function syncSalesFromSheet(
   const unmatched = new Set<string>();
   const dailyTotals = new Map<string, DailyTotal>();
   const userTotals = new Map<string, UserDailyTotal>();
-  const discountRows: unknown[][] = [];
+  const discountTotals = new Map<string, DiscountTotal>();
   let matchedRowCount = 0;
+  let discountedRowCount = 0;
 
   for (const r of rows) {
     const storeId = resolveStoreId(r.locationName, stores, aliases, "sheet");
@@ -538,7 +548,28 @@ async function syncSalesFromSheet(
     userDay.grossMargin += r.grossMargin ?? 0;
 
     if (r.discountNames) {
-      discountRows.push([storeId, r.orderDate, r.userName, r.discountNames, r.discounts ?? 0, r.totalOrders]);
+      // The sheet is per-order (has its own "Order name" column, unused
+      // here), so the same store+date+user+discount-combo key can repeat
+      // across multiple orders in a day — sum them rather than pushing one
+      // row per order, or a batched multi-row upsert throws "ON CONFLICT DO
+      // UPDATE command cannot affect row a second time" the moment two rows
+      // in the same batch share a key.
+      discountedRowCount++;
+      const discountKey = `${storeId}|${r.orderDate}|${r.userName}|${r.discountNames}`;
+      let discountTotal = discountTotals.get(discountKey);
+      if (!discountTotal) {
+        discountTotal = {
+          storeId,
+          date: r.orderDate,
+          userName: r.userName,
+          discountName: r.discountNames,
+          totalDiscounts: 0,
+          totalOrders: 0,
+        };
+        discountTotals.set(discountKey, discountTotal);
+      }
+      discountTotal.totalDiscounts += r.discounts ?? 0;
+      discountTotal.totalOrders += r.totalOrders ?? 0;
     }
   }
 
@@ -570,6 +601,14 @@ async function syncSalesFromSheet(
     d.totalSales,
     d.cogs,
     d.grossMargin,
+  ]);
+  const discountUpsertRows = [...discountTotals.values()].map((d) => [
+    d.storeId,
+    d.date,
+    d.userName,
+    d.discountName,
+    d.totalDiscounts,
+    d.totalOrders,
   ]);
 
   const client = await pool.connect();
@@ -603,14 +642,14 @@ async function syncSalesFromSheet(
       ],
       userSalesUpsertRows,
     );
-    if (discountRows.length > 0) {
+    if (discountUpsertRows.length > 0) {
       await batchUpsert(
         client,
         "discounts",
         ["store_id", "day_date", "user_name", "discount_name", "total_discounts", "total_orders"],
         ["store_id", "day_date", "user_name", "discount_name"],
         ["total_discounts", "total_orders"],
-        discountRows,
+        discountUpsertRows,
       );
     }
     await client.query("commit");
@@ -628,8 +667,8 @@ async function syncSalesFromSheet(
       unmatchedLocations: [...unmatched],
     },
     discounts: {
-      imported: discountRows.length,
-      skipped: matchedRowCount - discountRows.length,
+      imported: discountUpsertRows.length,
+      skipped: matchedRowCount - discountedRowCount,
       unmatchedLocations: [...unmatched],
     },
   };
