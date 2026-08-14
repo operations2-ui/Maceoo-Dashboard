@@ -2,6 +2,8 @@ import { pool } from "./db";
 
 export interface NegativeInventoryRow {
   [key: string]: unknown;
+  store_id: string;
+  store_name: string;
   sku: string;
   style_code: string;
   size_code: string;
@@ -10,19 +12,23 @@ export interface NegativeInventoryRow {
   on_hand: number;
 }
 
-export async function getNegativeInventory(storeId: string, date: string): Promise<NegativeInventoryRow[]> {
+export async function getNegativeInventory(storeIds: string[], date: string): Promise<NegativeInventoryRow[]> {
+  if (storeIds.length === 0) return [];
   const { rows } = await pool.query(
-    `select sku, style_code, size_code, description, vendor, on_hand
-     from inventory_snapshots
-     where store_id = $1 and snapshot_date = $2 and on_hand < 0
-     order by on_hand asc`,
-    [storeId, date],
+    `select i.store_id, s.name as store_name, i.sku, i.style_code, i.size_code, i.description, i.vendor, i.on_hand
+     from inventory_snapshots i
+     join stores s on s.id = i.store_id
+     where i.store_id = any($1::uuid[]) and i.snapshot_date = $2 and i.on_hand < 0
+     order by s.name, i.on_hand asc`,
+    [storeIds, date],
   );
   return rows;
 }
 
 export interface SoldNegativeRow {
   [key: string]: unknown;
+  store_id: string;
+  store_name: string;
   sku: string;
   style_code: string;
   size_code: string;
@@ -32,9 +38,19 @@ export interface SoldNegativeRow {
   items_sold: number;
 }
 
-export async function getSoldNegative(storeId: string, date: string): Promise<SoldNegativeRow[]> {
-  const { rows } = await pool.query("select * from report_negative_prior_day($1, $2)", [storeId, date]);
-  return rows;
+/** report_negative_prior_day() is single-store, so this fans out one call per store and merges. */
+export async function getSoldNegative(storeIds: string[], date: string): Promise<SoldNegativeRow[]> {
+  if (storeIds.length === 0) return [];
+  const { rows: storeRows } = await pool.query("select id, name from stores where id = any($1::uuid[])", [storeIds]);
+  const nameById = new Map<string, string>(storeRows.map((s) => [s.id, s.name]));
+
+  const perStore = await Promise.all(
+    storeIds.map(async (storeId) => {
+      const { rows } = await pool.query("select * from report_negative_prior_day($1, $2)", [storeId, date]);
+      return rows.map((r) => ({ ...r, store_id: storeId, store_name: nameById.get(storeId) ?? "" }));
+    }),
+  );
+  return perStore.flat().sort((a, b) => a.store_name.localeCompare(b.store_name));
 }
 
 export interface MissingSizeVariant {
@@ -46,6 +62,8 @@ export interface MissingSizeVariant {
 
 export interface MissingSizeRow {
   [key: string]: unknown;
+  store_id: string;
+  store_name: string;
   style_code: string;
   present_sizes: string[];
   min_size: string;
@@ -54,9 +72,21 @@ export interface MissingSizeRow {
   variants: MissingSizeVariant[];
 }
 
-export async function getMissingSizes(storeId: string, date: string): Promise<MissingSizeRow[]> {
-  const { rows } = await pool.query("select * from report_missing_sizes($1, $2)", [storeId, date]);
-  return rows.filter((r: MissingSizeRow) => r.missing_sizes && r.missing_sizes.length > 0);
+/** report_missing_sizes() is single-store, so this fans out one call per store and merges. */
+export async function getMissingSizes(storeIds: string[], date: string): Promise<MissingSizeRow[]> {
+  if (storeIds.length === 0) return [];
+  const { rows: storeRows } = await pool.query("select id, name from stores where id = any($1::uuid[])", [storeIds]);
+  const nameById = new Map<string, string>(storeRows.map((s) => [s.id, s.name]));
+
+  const perStore = await Promise.all(
+    storeIds.map(async (storeId) => {
+      const { rows } = await pool.query("select * from report_missing_sizes($1, $2)", [storeId, date]);
+      return rows
+        .filter((r: MissingSizeRow) => r.missing_sizes && r.missing_sizes.length > 0)
+        .map((r: MissingSizeRow) => ({ ...r, store_id: storeId, store_name: nameById.get(storeId) ?? "" }));
+    }),
+  );
+  return perStore.flat().sort((a, b) => a.store_name.localeCompare(b.store_name));
 }
 
 export interface DiscountRow {
@@ -127,8 +157,7 @@ export async function getInventoryAlertSummary(storeIds: string[]): Promise<Inve
     [storeIds, latestDate],
   );
 
-  const missingByStore = await Promise.all(storeIds.map((id) => getMissingSizes(id, latestDate)));
-  const missingSizeStyleCount = missingByStore.reduce((sum, rows) => sum + rows.length, 0);
+  const missingSizeStyleCount = (await getMissingSizes(storeIds, latestDate)).length;
 
   return { latestDate, negativeCount: negRows[0]?.c ?? 0, missingSizeStyleCount };
 }

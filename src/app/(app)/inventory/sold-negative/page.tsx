@@ -1,5 +1,5 @@
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { getAccessibleStores, hasStoreAccess } from "@/lib/authz";
+import { getAccessibleStores } from "@/lib/authz";
 import { getSoldNegative } from "@/lib/reports";
 import { StoreDateFilter } from "@/components/FilterForm";
 import SoldNegativeTable from "@/components/tables/SoldNegativeTable";
@@ -13,10 +13,13 @@ export default async function SoldNegativePage({
   const { store, date } = await searchParams;
   const user = await getCurrentUser();
   const stores = await getAccessibleStores(user);
-  const storeId = store ?? stores[0]?.id;
-  const snapshotDate = date ?? new Date().toISOString().slice(0, 10);
+  const allowedIds = stores.map((s) => s.id);
 
-  const rows = storeId && (await hasStoreAccess(user, storeId)) ? await getSoldNegative(storeId, snapshotDate) : [];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const snapshotDate = date ?? yesterday;
+  const storeIds = store && store !== "all" && allowedIds.includes(store) ? [store] : allowedIds;
+
+  const rows = await getSoldNegative(storeIds, snapshotDate);
 
   return (
     <div>
@@ -24,10 +27,10 @@ export default async function SoldNegativePage({
       <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
         SKUs where today&apos;s closing stock is negative and lower than yesterday&apos;s closing stock.
       </p>
-      <StoreDateFilter stores={stores} store={storeId} date={snapshotDate} />
-      {rows.length > 0 && storeId && (
+      <StoreDateFilter stores={stores} store={store} date={snapshotDate} />
+      {rows.length > 0 && (
         <div className="flex justify-end mb-2">
-          <DownloadCsvLink href={`/api/export/inventory-sold-negative?store=${storeId}&date=${snapshotDate}`} />
+          <DownloadCsvLink href={`/api/export/inventory-sold-negative?store=${store ?? "all"}&date=${snapshotDate}`} />
         </div>
       )}
       <SoldNegativeTable rows={rows} />

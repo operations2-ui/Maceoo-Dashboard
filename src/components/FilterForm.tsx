@@ -9,16 +9,17 @@ export function StoreDateFilter({
   store?: string;
   date?: string;
 }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
   return (
     <form method="get" className="flex flex-wrap items-end gap-3 mb-6">
       <div>
         <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Store</label>
         <select
           name="store"
-          defaultValue={store ?? stores[0]?.id ?? ""}
+          defaultValue={store ?? "all"}
           className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm min-w-[10rem]"
         >
+          <option value="all">All stores</option>
           {stores.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name}
@@ -31,7 +32,7 @@ export function StoreDateFilter({
         <input
           type="date"
           name="date"
-          defaultValue={date ?? today}
+          defaultValue={date ?? yesterday}
           className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm"
         />
       </div>

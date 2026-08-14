@@ -22,7 +22,7 @@ function ExpandedDetail({ row }: { row: MissingSizeRow }) {
 
   return (
     <tr>
-      <td colSpan={5} className="bg-slate-50 dark:bg-slate-800 px-4 py-3">
+      <td colSpan={6} className="bg-slate-50 dark:bg-slate-800 px-4 py-3">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-slate-500 dark:text-slate-400">
@@ -58,16 +58,17 @@ export default function MissingSizesTable({ rows }: { rows: MissingSizeRow[] }) 
     return rows.filter(
       (r) =>
         r.style_code.toLowerCase().includes(q) ||
+        r.store_name.toLowerCase().includes(q) ||
         r.present_sizes.join(",").includes(q) ||
         (r.missing_sizes ?? []).join(",").includes(q),
     );
   }, [rows, search]);
 
-  function toggle(styleCode: string) {
+  function toggle(rowKey: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(styleCode)) next.delete(styleCode);
-      else next.add(styleCode);
+      if (next.has(rowKey)) next.delete(rowKey);
+      else next.add(rowKey);
       return next;
     });
   }
@@ -93,7 +94,7 @@ export default function MissingSizesTable({ rows }: { rows: MissingSizeRow[] }) 
 
       {filteredRows.length === 0 ? (
         <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center text-sm text-slate-500 dark:text-slate-400">
-          No missing-size gaps for this store and date.
+          No missing-size gaps for this date.
         </div>
       ) : (
         <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-auto max-h-[70vh]">
@@ -101,6 +102,9 @@ export default function MissingSizesTable({ rows }: { rows: MissingSizeRow[] }) 
             <thead className="sticky top-0 z-10">
               <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
                 <th className="px-3 py-2 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap w-8"></th>
+                <th className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap bg-slate-50 dark:bg-slate-800">
+                  Store
+                </th>
                 <th className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap bg-slate-50 dark:bg-slate-800">
                   Style
                 </th>
@@ -116,27 +120,33 @@ export default function MissingSizesTable({ rows }: { rows: MissingSizeRow[] }) 
               </tr>
             </thead>
             <tbody>
-              {filteredRows.map((r) => (
-                <Fragment key={r.style_code}>
-                  <tr
-                    onClick={() => toggle(r.style_code)}
-                    className="border-b border-slate-100 dark:border-slate-800 odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-800/40 hover:bg-blue-50/60 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                  >
-                    <td className="px-3 py-2 text-slate-400 dark:text-slate-500">
-                      {expanded.has(r.style_code) ? "▼" : "▶"}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap font-medium text-slate-900 dark:text-white">
-                      {r.style_code}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{r.min_size}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{r.max_size}</td>
-                    <td className="px-3 py-2 text-red-600 dark:text-red-400 font-semibold">
-                      {(r.missing_sizes ?? []).join(", ")}
-                    </td>
-                  </tr>
-                  {expanded.has(r.style_code) && <ExpandedDetail row={r} />}
-                </Fragment>
-              ))}
+              {filteredRows.map((r) => {
+                const rowKey = `${r.store_id}-${r.style_code}`;
+                return (
+                  <Fragment key={rowKey}>
+                    <tr
+                      onClick={() => toggle(rowKey)}
+                      className="border-b border-slate-100 dark:border-slate-800 odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-800/40 hover:bg-blue-50/60 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                    >
+                      <td className="px-3 py-2 text-slate-400 dark:text-slate-500">
+                        {expanded.has(rowKey) ? "▼" : "▶"}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-slate-700 dark:text-slate-300">
+                        {r.store_name}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap font-medium text-slate-900 dark:text-white">
+                        {r.style_code}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.min_size}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.max_size}</td>
+                      <td className="px-3 py-2 text-red-600 dark:text-red-400 font-semibold">
+                        {(r.missing_sizes ?? []).join(", ")}
+                      </td>
+                    </tr>
+                    {expanded.has(rowKey) && <ExpandedDetail row={r} />}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

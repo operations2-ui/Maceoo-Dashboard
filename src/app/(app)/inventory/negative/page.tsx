@@ -1,5 +1,5 @@
 import { getCurrentUser } from "@/lib/auth/current-user";
-import { getAccessibleStores, hasStoreAccess } from "@/lib/authz";
+import { getAccessibleStores } from "@/lib/authz";
 import { getNegativeInventory } from "@/lib/reports";
 import { StoreDateFilter } from "@/components/FilterForm";
 import NegativeInventoryTable from "@/components/tables/NegativeInventoryTable";
@@ -13,10 +13,13 @@ export default async function NegativeInventoryPage({
   const { store, date } = await searchParams;
   const user = await getCurrentUser();
   const stores = await getAccessibleStores(user);
-  const storeId = store ?? stores[0]?.id;
-  const snapshotDate = date ?? new Date().toISOString().slice(0, 10);
+  const allowedIds = stores.map((s) => s.id);
 
-  const rows = storeId && (await hasStoreAccess(user, storeId)) ? await getNegativeInventory(storeId, snapshotDate) : [];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const snapshotDate = date ?? yesterday;
+  const storeIds = store && store !== "all" && allowedIds.includes(store) ? [store] : allowedIds;
+
+  const rows = await getNegativeInventory(storeIds, snapshotDate);
 
   return (
     <div>
@@ -24,10 +27,10 @@ export default async function NegativeInventoryPage({
       <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
         SKUs with negative on-hand quantity as of the selected date.
       </p>
-      <StoreDateFilter stores={stores} store={storeId} date={snapshotDate} />
-      {rows.length > 0 && storeId && (
+      <StoreDateFilter stores={stores} store={store} date={snapshotDate} />
+      {rows.length > 0 && (
         <div className="flex justify-end mb-2">
-          <DownloadCsvLink href={`/api/export/inventory-negative?store=${storeId}&date=${snapshotDate}`} />
+          <DownloadCsvLink href={`/api/export/inventory-negative?store=${store ?? "all"}&date=${snapshotDate}`} />
         </div>
       )}
       <NegativeInventoryTable rows={rows} />
