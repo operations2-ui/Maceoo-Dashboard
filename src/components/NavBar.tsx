@@ -37,9 +37,6 @@ export default function NavBar({ isAdmin, email }: { isAdmin: boolean; email?: s
           ))}
           {isAdmin && (
             <>
-              <Link href="/admin/import" className="text-slate-300 hover:text-white">
-                Admin Import
-              </Link>
               <Link href="/admin/stores" className="text-slate-300 hover:text-white">
                 Users &amp; Access
               </Link>

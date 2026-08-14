@@ -17,7 +17,8 @@ export default async function AdminStoresPage() {
     <div>
       <h1 className="text-xl font-semibold text-slate-900 dark:text-white mb-1">Admin: Users &amp; Store Access</h1>
       <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-        Set each user&apos;s role and which stores they can see. Admins see every store automatically.
+        Create users, edit their name/email, and set each user&apos;s role and which stores they can see. Admins
+        see every store automatically. Click a user&apos;s name to edit it.
       </p>
       <AccessManager profiles={profiles} stores={stores} initialAccess={access} />
     </div>
