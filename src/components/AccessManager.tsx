@@ -109,17 +109,32 @@ function EditUserCell({ userId, initialEmail, initialFullName }: { userId: strin
   const [editing, setEditing] = useState(false);
   const [email, setEmail] = useState(initialEmail ?? "");
   const [fullName, setFullName] = useState(initialFullName ?? "");
+  const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  const dirty =
+    email.trim() !== (initialEmail ?? "") || fullName.trim() !== (initialFullName ?? "") || password.length > 0;
 
   async function save() {
-    if (!email.trim()) return;
+    if (!email.trim() || !dirty) return;
+    if (password.length > 0 && password.length < 6) {
+      setError("Password must be at least 6 characters");
+      return;
+    }
     setSaving(true);
     setError(null);
+    setSavedAt(null);
     const res = await fetch("/api/admin/users", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, email: email.trim(), fullName: fullName.trim() || null }),
+      body: JSON.stringify({
+        userId,
+        email: email.trim(),
+        fullName: fullName.trim() || null,
+        ...(password.length > 0 ? { password } : {}),
+      }),
     });
     const data = await res.json();
     setSaving(false);
@@ -127,7 +142,8 @@ function EditUserCell({ userId, initialEmail, initialFullName }: { userId: strin
       setError(data.error ?? "Save failed");
       return;
     }
-    setEditing(false);
+    setPassword("");
+    setSavedAt(Date.now());
     router.refresh();
   }
 
@@ -146,26 +162,44 @@ function EditUserCell({ userId, initialEmail, initialFullName }: { userId: strin
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
         <input
           type="email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            setSavedAt(null);
+          }}
           placeholder="Email"
           className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-2 py-1 text-xs w-40"
         />
         <input
           type="text"
           value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
+          onChange={(e) => {
+            setFullName(e.target.value);
+            setSavedAt(null);
+          }}
           placeholder="Full name"
           className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-2 py-1 text-xs w-32"
+        />
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            setSavedAt(null);
+          }}
+          placeholder="New password (optional)"
+          className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-2 py-1 text-xs w-40"
         />
         <button
           type="button"
           onClick={save}
-          disabled={saving}
-          className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-xs font-medium px-2.5 py-1 disabled:opacity-50"
+          disabled={saving || !dirty}
+          className={`rounded-md text-white text-xs font-medium px-2.5 py-1 disabled:opacity-40 disabled:cursor-not-allowed ${
+            dirty ? "bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500" : "bg-slate-400 dark:bg-slate-700"
+          }`}
         >
           {saving ? "Saving…" : "Save"}
         </button>
@@ -175,14 +209,20 @@ function EditUserCell({ userId, initialEmail, initialFullName }: { userId: strin
             setEditing(false);
             setEmail(initialEmail ?? "");
             setFullName(initialFullName ?? "");
+            setPassword("");
             setError(null);
+            setSavedAt(null);
           }}
           className="text-xs text-slate-500 dark:text-slate-400 hover:underline"
         >
-          Cancel
+          Close
         </button>
+        {savedAt && <span className="text-xs text-green-600 dark:text-green-400 font-medium">✓ Saved</span>}
       </div>
       {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
+      {!error && !savedAt && dirty && (
+        <span className="text-xs text-amber-600 dark:text-amber-400">Unsaved changes</span>
+      )}
     </div>
   );
 }

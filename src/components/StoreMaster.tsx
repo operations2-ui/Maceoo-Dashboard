@@ -80,12 +80,18 @@ function AddStoreForm() {
 }
 
 function AliasCell({ storeId, source, initial }: { storeId: string; source: "inventory" | "sheet"; initial: string[] }) {
-  const [value, setValue] = useState(initial.join(", "));
+  const initialValue = initial.join(", ");
+  const [value, setValue] = useState(initialValue);
+  // Tracks the last value actually persisted, separate from `initial` (which only
+  // updates on a full page refresh) so the Save button un-highlights right after saving.
+  const [savedValue, setSavedValue] = useState(initialValue);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const dirty = value !== savedValue;
 
   async function save() {
+    if (!dirty) return;
     setSaving(true);
     setError(null);
     const aliases = value
@@ -102,6 +108,7 @@ function AliasCell({ storeId, source, initial }: { storeId: string; source: "inv
     if (!res.ok) {
       setError(data.error ?? "Save failed");
     } else {
+      setSavedValue(value);
       setSavedAt(Date.now());
       setTimeout(() => setSavedAt(null), 1500);
     }
@@ -112,15 +119,20 @@ function AliasCell({ storeId, source, initial }: { storeId: string; source: "inv
       <input
         type="text"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          setValue(e.target.value);
+          setError(null);
+        }}
         placeholder="comma-separated aliases"
         className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-2 py-1 text-sm w-64"
       />
       <button
         type="button"
         onClick={save}
-        disabled={saving}
-        className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-xs font-medium px-3 py-1.5 disabled:opacity-50"
+        disabled={saving || !dirty}
+        className={`rounded-md text-white text-xs font-medium px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed ${
+          dirty ? "bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500" : "bg-slate-300 dark:bg-slate-700"
+        }`}
       >
         {saving ? "Saving…" : "Save"}
       </button>

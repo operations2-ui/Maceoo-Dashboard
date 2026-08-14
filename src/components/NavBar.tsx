@@ -25,7 +25,7 @@ const adminLinks = [
 export default function NavBar({ isAdmin, displayName }: { isAdmin: boolean; displayName?: string }) {
   return (
     <header className="sticky top-0 z-30 bg-slate-900" suppressHydrationWarning>
-      <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-24 flex items-center justify-between gap-4 flex-wrap">
         <Link href="/" className="flex items-center gap-3 shrink-0">
           <Image
             src="/logo.avif"
@@ -44,8 +44,8 @@ export default function NavBar({ isAdmin, displayName }: { isAdmin: boolean; dis
           <SignOutButton />
         </div>
       </div>
-      <div className="border-t border-slate-800 bg-slate-950/40">
-        <div className="max-w-6xl mx-auto px-4 py-2 flex items-center gap-1.5 flex-wrap">
+      <div className="border-t border-slate-800 bg-slate-950/40 h-12">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-full flex items-center gap-1.5 flex-wrap">
           <NavLinks links={isAdmin ? [...links, ...adminLinks] : links} />
         </div>
       </div>

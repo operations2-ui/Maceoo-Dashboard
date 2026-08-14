@@ -40,24 +40,33 @@ export async function POST(request: Request) {
   }
 }
 
-/** Edit an existing user's email and/or display name (not password or role — those have their own flows). */
+/** Edit an existing user's email, display name, and/or password (role has its own flow). */
 export async function PATCH(request: Request) {
   const auth = await requireAdmin();
   if (!auth.ok) return NextResponse.json({ error: auth.message }, { status: auth.status });
 
-  const { userId, email, fullName } = await request.json();
+  const { userId, email, fullName, password } = await request.json();
   if (typeof userId !== "string" || typeof email !== "string" || !email.trim()) {
     return NextResponse.json({ error: "userId and a valid email are required" }, { status: 400 });
+  }
+  if (typeof password === "string" && password.length > 0 && password.length < 6) {
+    return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
   }
 
   const normalizedEmail = email.trim().toLowerCase();
   const cleanFullName = typeof fullName === "string" && fullName.trim() ? fullName.trim() : null;
 
   try {
-    const { rows } = await pool.query(
-      "update app_users set email = $1, full_name = $2 where id = $3 returning id as user_id, email, full_name, role",
-      [normalizedEmail, cleanFullName, userId],
-    );
+    const { rows } =
+      typeof password === "string" && password.length >= 6
+        ? await pool.query(
+            "update app_users set email = $1, full_name = $2, password_hash = $3 where id = $4 returning id as user_id, email, full_name, role",
+            [normalizedEmail, cleanFullName, await hashPassword(password), userId],
+          )
+        : await pool.query(
+            "update app_users set email = $1, full_name = $2 where id = $3 returning id as user_id, email, full_name, role",
+            [normalizedEmail, cleanFullName, userId],
+          );
     if (rows.length === 0) return NextResponse.json({ error: "User not found" }, { status: 404 });
     return NextResponse.json({ user: rows[0] });
   } catch (e) {
