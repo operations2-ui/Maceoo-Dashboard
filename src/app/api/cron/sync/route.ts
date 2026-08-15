@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { runSync } from "@/lib/sync";
+import { runSync, closeStaleSyncRuns } from "@/lib/sync";
 
 // Google Sheets fetch + batched DB writes to a remote host can take longer
 // than Vercel's 10s default function timeout; extend it explicitly.
@@ -22,6 +22,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  await closeStaleSyncRuns();
   const { rows } = await pool.query("insert into sync_runs (status) values ('running') returning id");
   const runId = rows[0].id;
 

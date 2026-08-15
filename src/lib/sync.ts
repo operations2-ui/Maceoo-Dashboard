@@ -49,6 +49,30 @@ function pastDeadline(deadline: number | null): boolean {
   return deadline != null && Date.now() > deadline;
 }
 
+// The sales sheet only ever grows (every historical order stays in it), so
+// re-aggregating and re-upserting the *entire* sheet on every run gets
+// slower every day — it started fitting comfortably in 40-50s and, months
+// in, was taking 5+ minutes and getting hard-killed by Vercel mid-transaction
+// (rolling back all its work) without ever marking its sync_runs row as
+// failed — the exact "stuck on running forever" symptom. Old orders don't
+// change once the day closes, so bounding this to a rolling recent window
+// keeps runtime roughly constant regardless of how much history has piled
+// up, the same tradeoff already made for inventory's 30-day retention.
+const SALES_SYNC_WINDOW_DAYS = Number(process.env.SALES_SYNC_WINDOW_DAYS) || 45;
+
+/** Marks any sync_runs row still 'running' well past Vercel's max function
+ * duration as failed. Nothing can update its own row after being hard-killed
+ * mid-run, so without this, an orphaned row shows "running" forever in the
+ * Recent Runs table even though the actual process died minutes ago. */
+export async function closeStaleSyncRuns(): Promise<void> {
+  await pool.query(
+    `update sync_runs
+     set finished_at = now(), status = 'error', current_step = null,
+         error_message = 'Orphaned: the platform likely hard-killed this run before it could update its own status'
+     where status = 'running' and started_at < now() - interval '5 minutes'`,
+  );
+}
+
 export interface SyncSummary {
   inventory: { folder: string; store: string; file: string; imported: number }[];
   inventoryUnmatchedFolders: string[];
@@ -459,14 +483,22 @@ async function syncSalesFromSheet(
   range: string,
   stores: StoreRef[],
   aliases: StoreAlias[],
+  onProgress: SyncProgress = noopProgress,
 ): Promise<{ sales: SyncSummary["sales"]; discounts: SyncSummary["discounts"] }> {
+  onProgress("Fetching sales sheet");
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get(
     { spreadsheetId: sheetId, range },
     { timeout: GOOGLE_REQUEST_TIMEOUT_MS },
   );
   const csv = rowsToCsv((res.data.values ?? []) as string[][]);
-  const rows = parseSalesCsv(csv);
+  const allRows = parseSalesCsv(csv);
+
+  const windowStart = new Date(Date.now() - SALES_SYNC_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
+  const rows = allRows.filter((r) => r.orderDate >= windowStart);
+  onProgress(
+    `Syncing sales and discounts (last ${SALES_SYNC_WINDOW_DAYS} days: ${rows.length.toLocaleString("en-US")} of ${allRows.length.toLocaleString("en-US")} rows)`,
+  );
 
   const unmatched = new Set<string>();
   const dailyTotals = new Map<string, DailyTotal>();
@@ -790,9 +822,14 @@ export async function runSync(
   let discounts: SyncSummary["discounts"] = null;
   const salesSheetId = process.env.SALES_SHEET_ID;
   if (salesSheetId) {
-    onProgress("Syncing sales and discounts");
     try {
-      const result = await syncSalesFromSheet(salesSheetId, process.env.SALES_SHEET_RANGE || "A:Z", stores, aliases);
+      const result = await syncSalesFromSheet(
+        salesSheetId,
+        process.env.SALES_SHEET_RANGE || "A:Z",
+        stores,
+        aliases,
+        onProgress,
+      );
       sales = result.sales;
       discounts = result.discounts;
     } catch (e) {
