@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/sync",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/oversell-emails",
+      "schedule": "0 14 * * 2"
     }
   ]
 }

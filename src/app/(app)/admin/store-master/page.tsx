@@ -8,7 +8,7 @@ export default async function StoreMasterPage() {
   if (user?.role !== "admin") redirect("/");
 
   const [{ rows: stores }, { rows: aliases }] = await Promise.all([
-    pool.query("select id, name, code from stores order by name"),
+    pool.query("select id, name, code, to_email, cc_email from stores order by name"),
     pool.query("select store_id, source, alias_name from store_aliases"),
   ]);
 
@@ -19,7 +19,8 @@ export default async function StoreMasterPage() {
         Map each canonical store to the names it appears under in other systems: the Drive folder name for daily
         inventory CSVs, and the &quot;Location Name&quot; text used in the Discounts/Sales Google Sheets. These
         don&apos;t need to match the store name above — the importer uses these aliases first, falling back to a
-        fuzzy name match only if no alias is set.
+        fuzzy name match only if no alias is set. To Email / CC Email are used for the weekly Prior-Day Oversell
+        alert — stores without a To Email set are skipped.
       </p>
       <StoreMaster stores={stores} aliases={aliases} />
     </div>
