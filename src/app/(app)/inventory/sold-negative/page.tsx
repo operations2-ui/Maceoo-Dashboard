@@ -4,6 +4,7 @@ import { getSoldNegative } from "@/lib/reports";
 import { StoreDateFilter } from "@/components/FilterForm";
 import SoldNegativeTable from "@/components/tables/SoldNegativeTable";
 import DownloadCsvLink from "@/components/DownloadCsvLink";
+import NotifyOversellButton from "@/components/NotifyOversellButton";
 
 export default async function SoldNegativePage({
   searchParams,
@@ -20,6 +21,7 @@ export default async function SoldNegativePage({
   const storeIds = store && store !== "all" && allowedIds.includes(store) ? [store] : allowedIds;
 
   const rows = await getSoldNegative(storeIds, snapshotDate);
+  const notifyLabel = storeIds.length === 1 ? "Store Manager" : "All Store Managers";
 
   return (
     <div>
@@ -29,7 +31,8 @@ export default async function SoldNegativePage({
       </p>
       <StoreDateFilter stores={stores} store={store} date={snapshotDate} />
       {rows.length > 0 && (
-        <div className="flex justify-end mb-2">
+        <div className="flex items-start justify-between mb-2 gap-3 flex-wrap">
+          <NotifyOversellButton storeIds={storeIds} storeLabel={notifyLabel} date={snapshotDate} />
           <DownloadCsvLink href={`/api/export/inventory-sold-negative?store=${store ?? "all"}&date=${snapshotDate}`} />
         </div>
       )}
