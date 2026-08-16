@@ -17,10 +17,12 @@ export default async function DiscountsAnalysisPage({
   const stores = await getAccessibleStores(user);
   const allowedIds = stores.map((s) => s.id);
 
-  const today = new Date().toISOString().slice(0, 10);
-  const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  // Ends at yesterday, not today — today's sync hasn't necessarily run yet,
+  // so a "through today" default would silently under-report its own last day.
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const monthAgo = new Date(Date.now() - 31 * 86400000).toISOString().slice(0, 10);
   const fromDate = from ?? monthAgo;
-  const toDate = to ?? today;
+  const toDate = to ?? yesterday;
 
   const storeIds = store && store !== "all" && allowedIds.includes(store) ? [store] : allowedIds;
 

@@ -51,11 +51,13 @@ export default async function Home() {
   const stores = await getAccessibleStores(user);
   const storeIds = stores.map((s) => s.id);
 
-  const today = new Date();
-  const toDate = isoDate(today);
-  const fromDate = isoDate(new Date(today.getTime() - PERIOD_DAYS * dayMs));
-  const prevToDate = isoDate(new Date(today.getTime() - (PERIOD_DAYS + 1) * dayMs));
-  const prevFromDate = isoDate(new Date(today.getTime() - PERIOD_DAYS * 2 * dayMs));
+  // Ends at yesterday, not today — today's sync hasn't necessarily run yet,
+  // so a "through today" window would silently under-report its own last day.
+  const anchor = new Date(Date.now() - dayMs);
+  const toDate = isoDate(anchor);
+  const fromDate = isoDate(new Date(anchor.getTime() - PERIOD_DAYS * dayMs));
+  const prevToDate = isoDate(new Date(anchor.getTime() - (PERIOD_DAYS + 1) * dayMs));
+  const prevFromDate = isoDate(new Date(anchor.getTime() - PERIOD_DAYS * 2 * dayMs));
 
   const [salesRows, discountRows, prevSalesRows, prevDiscountRows, alerts] = await Promise.all([
     getSales(storeIds, fromDate, toDate),

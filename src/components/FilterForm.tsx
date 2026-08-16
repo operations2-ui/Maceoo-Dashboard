@@ -68,8 +68,9 @@ export function StoreDateRangeFilter({
   from?: string;
   to?: string;
 }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  // Ends at yesterday, not today — today's sync hasn't necessarily run yet.
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const monthAgo = new Date(Date.now() - 31 * 86400000).toISOString().slice(0, 10);
   const storeName = store && store !== "all" ? stores.find((s) => s.id === store)?.name ?? "Unknown store" : "All stores";
   return (
     <div className={stickyBarClass}>
@@ -103,7 +104,7 @@ export function StoreDateRangeFilter({
           <input
             type="date"
             name="to"
-            defaultValue={to ?? today}
+            defaultValue={to ?? yesterday}
             className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm"
           />
         </div>
@@ -113,7 +114,7 @@ export function StoreDateRangeFilter({
         <span className="text-sm text-slate-500 dark:text-slate-400 w-full sm:w-auto sm:ml-auto">
           Showing: <span className="font-medium text-slate-700 dark:text-slate-200">{storeName}</span> ·{" "}
           <span className="font-medium text-slate-700 dark:text-slate-200">
-            {from ?? monthAgo} to {to ?? today}
+            {from ?? monthAgo} to {to ?? yesterday}
           </span>
         </span>
       </form>
