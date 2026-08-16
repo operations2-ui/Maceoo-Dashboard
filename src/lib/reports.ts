@@ -352,24 +352,37 @@ export async function getRetailAuditDashboard(): Promise<RetailAuditDashboardRow
 export interface RetailAuditDetailRow {
   [key: string]: unknown;
   po_number: string;
-  vendor: string | null;
-  po_date: string | null;
-  sku: string | null;
+  sku: string;
   item_name: string | null;
-  sp_number: string | null;
+  po_quantity: string | null;
   quantity_received: string | null;
-  quantity_billed: string | null;
   quantity_shipped: string | null;
 }
 
-/** SKU-level drill-down for one PO, shown when a Retail Audit summary row is expanded. */
+/**
+ * SKU-level drill-down for one PO, shown when a Retail Audit summary row is
+ * expanded. Driven by po_raw_data (All PO Data), not retail_audit_raw_data —
+ * a PO's line items only show up in the Retail Audit sheet once they've been
+ * matched to a sales order, so some SKUs that are genuinely on the PO would
+ * be missing entirely if this queried Retail Audit Data directly. Instead,
+ * every SKU on the PO is listed (from All PO Data), left-joined against
+ * Retail Audit Data by SKU to fill in Quantity Received/Shipped where a
+ * match exists — blank where it doesn't (not yet audited).
+ */
 export async function getRetailAuditDetail(poNumber: string): Promise<RetailAuditDetailRow[]> {
   const { rows } = await pool.query(
-    `select po_number, vendor, to_char(po_date, 'YYYY-MM-DD') as po_date, sku, item_name, sp_number,
-            quantity_received, quantity_billed, quantity_shipped
-     from retail_audit_raw_data
-     where po_number = $1
-     order by id`,
+    `select
+       p.document_number as po_number,
+       trim(split_part(p.item, ':', 2)) as sku,
+       p.display_name as item_name,
+       p.quantity as po_quantity,
+       a.quantity_received,
+       a.quantity_shipped
+     from po_raw_data p
+     left join retail_audit_raw_data a
+       on a.po_number = p.document_number and a.sku = trim(split_part(p.item, ':', 2))
+     where p.document_number = $1
+     order by p.line_id`,
     [poNumber],
   );
   return rows;

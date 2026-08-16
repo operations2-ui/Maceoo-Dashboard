@@ -6,32 +6,47 @@ import type { RetailAuditDashboardRow, RetailAuditDetailRow } from "@/lib/report
 interface Column {
   key: keyof RetailAuditDashboardRow;
   header: string;
+  /** Full label shown as a tooltip when `header` is a shortened version, so meaning isn't lost to save width. */
+  title?: string;
   numeric?: boolean;
   danger?: boolean;
+  /** Tailwind width class — quantity/diff columns are narrow so the whole table fits without horizontal scroll. */
+  width?: string;
 }
 
 const columns: Column[] = [
-  { key: "po_number", header: "PO Number" },
-  { key: "po_date", header: "Date of PO" },
-  { key: "po_status", header: "PO Status (From PO File)" },
-  { key: "related_sp", header: "Related SP" },
-  { key: "vendor_name", header: "Vendor Name" },
-  { key: "ordered_quantity", header: "Ordered Quantity", numeric: true },
-  { key: "billed_quantity", header: "Billed Quantity", numeric: true },
-  { key: "shipped_quantity", header: "Shipped Quantity", numeric: true },
-  { key: "received_quantity", header: "Received Quantity", numeric: true },
-  { key: "diff_shipped_received", header: "Difference Between Shipped and Received", numeric: true, danger: true },
-  { key: "diff_received_billed", header: "Difference Between Received and Billed", numeric: true, danger: true },
+  { key: "po_number", header: "PO Number", width: "w-24" },
+  { key: "po_date", header: "Date of PO", width: "w-24" },
+  { key: "po_status", header: "PO Status", title: "PO Status (From PO File)", width: "w-28" },
+  { key: "related_sp", header: "Related SP", width: "w-28" },
+  { key: "vendor_name", header: "Vendor Name", width: "w-40" },
+  { key: "ordered_quantity", header: "Ordered", title: "Ordered Quantity", numeric: true, width: "w-16" },
+  { key: "billed_quantity", header: "Billed", title: "Billed Quantity", numeric: true, width: "w-16" },
+  { key: "shipped_quantity", header: "Shipped", title: "Shipped Quantity", numeric: true, width: "w-16" },
+  { key: "received_quantity", header: "Received", title: "Received Quantity", numeric: true, width: "w-16" },
+  {
+    key: "diff_shipped_received",
+    header: "Shipped − Received",
+    title: "Difference Between Shipped and Received",
+    numeric: true,
+    danger: true,
+    width: "w-20",
+  },
+  {
+    key: "diff_received_billed",
+    header: "Received − Billed",
+    title: "Difference Between Received and Billed",
+    numeric: true,
+    danger: true,
+    width: "w-20",
+  },
 ];
 
 const detailColumns: { key: keyof RetailAuditDetailRow; header: string; numeric?: boolean }[] = [
   { key: "sku", header: "SKU" },
   { key: "item_name", header: "Item Name" },
-  { key: "vendor", header: "Vendor" },
-  { key: "po_date", header: "PO Date" },
-  { key: "sp_number", header: "SP Number" },
+  { key: "po_quantity", header: "Qty Ordered", numeric: true },
   { key: "quantity_received", header: "Qty Received", numeric: true },
-  { key: "quantity_billed", header: "Qty Billed", numeric: true },
   { key: "quantity_shipped", header: "Qty Shipped", numeric: true },
 ];
 
@@ -125,10 +140,13 @@ export default function RetailAuditTable({ rows }: { rows: RetailAuditDashboardR
                   <th
                     key={c.key}
                     onClick={() => toggleSort(c.key)}
-                    className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-700"
+                    title={c.title}
+                    className={`${c.numeric ? "px-1.5" : "px-3"} py-2 text-left font-semibold text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-700 ${
+                      c.width ?? ""
+                    } ${c.numeric ? "leading-tight" : "whitespace-nowrap"}`}
                   >
                     {c.header}
-                    <span className="ml-1 text-xs opacity-60">
+                    <span className="ml-0.5 text-xs opacity-60">
                       {sort.key === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "▽"}
                     </span>
                   </th>
@@ -148,10 +166,14 @@ export default function RetailAuditTable({ rows }: { rows: RetailAuditDashboardR
                   >
                     {columns.map((c) => {
                       const flagged = c.danger && Number(r[c.key]) !== 0;
+                      const value = String(r[c.key] ?? "—");
                       return (
                         <td
                           key={c.key}
-                          className={`px-3 py-2 whitespace-nowrap ${c.numeric ? "text-right tabular-nums" : "text-left"} ${
+                          title={c.key === "vendor_name" ? value : undefined}
+                          className={`${c.numeric ? "px-1.5" : "px-3"} py-2 ${
+                            c.key === "vendor_name" ? "truncate max-w-[10rem]" : "whitespace-nowrap"
+                          } ${c.numeric ? "text-right tabular-nums" : "text-left"} ${
                             c.key === "po_number"
                               ? "font-medium text-blue-700 dark:text-blue-400"
                               : flagged
@@ -159,7 +181,7 @@ export default function RetailAuditTable({ rows }: { rows: RetailAuditDashboardR
                                 : "text-slate-700 dark:text-slate-300"
                           }`}
                         >
-                          {String(r[c.key] ?? "—")}
+                          {value}
                         </td>
                       );
                     })}
