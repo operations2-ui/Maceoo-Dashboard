@@ -2,6 +2,7 @@
 
 import { Fragment, useMemo, useState } from "react";
 import type { RetailAuditDashboardRow, RetailAuditDetailRow } from "@/lib/reports";
+import NotifyRetailAuditButton from "@/components/NotifyRetailAuditButton";
 
 interface Column {
   key: keyof RetailAuditDashboardRow;
@@ -42,12 +43,21 @@ const columns: Column[] = [
   },
 ];
 
-const detailColumns: { key: keyof RetailAuditDetailRow; header: string; numeric?: boolean }[] = [
+interface DetailColumn {
+  key: keyof RetailAuditDetailRow;
+  header: string;
+  numeric?: boolean;
+  danger?: boolean;
+}
+
+const detailColumns: DetailColumn[] = [
   { key: "sku", header: "SKU" },
   { key: "item_name", header: "Item Name" },
   { key: "po_quantity", header: "Qty Ordered", numeric: true },
   { key: "quantity_received", header: "Qty Received", numeric: true },
   { key: "quantity_shipped", header: "Qty Shipped", numeric: true },
+  { key: "diff_shipped_received", header: "Shipped − Received", numeric: true, danger: true },
+  { key: "diff_ordered_received", header: "Ordered − Received", numeric: true, danger: true },
 ];
 
 export default function RetailAuditTable({ rows }: { rows: RetailAuditDashboardRow[] }) {
@@ -196,6 +206,10 @@ export default function RetailAuditTable({ rows }: { rows: RetailAuditDashboardR
                           {detailError && loadingPo !== r.po_number && (
                             <p className="text-sm text-red-600 dark:text-red-400 px-2 py-3">{detailError}</p>
                           )}
+                          {detailCache[r.po_number] &&
+                            detailCache[r.po_number].some((d) => Number(d.diff_shipped_received) > 0) && (
+                              <NotifyRetailAuditButton poNumber={r.po_number} />
+                            )}
                           {detailCache[r.po_number] && (
                             <table className="w-full text-sm border-collapse bg-white dark:bg-slate-900 rounded-md overflow-hidden">
                               <thead>
@@ -222,16 +236,19 @@ export default function RetailAuditTable({ rows }: { rows: RetailAuditDashboardR
                                 ) : (
                                   detailCache[r.po_number].map((d, i) => (
                                     <tr key={i} className="border-t border-slate-100 dark:border-slate-800">
-                                      {detailColumns.map((dc) => (
-                                        <td
-                                          key={dc.key}
-                                          className={`px-3 py-1.5 whitespace-nowrap ${
-                                            dc.numeric ? "text-right tabular-nums" : "text-left"
-                                          } text-slate-700 dark:text-slate-300`}
-                                        >
-                                          {String(d[dc.key] ?? "—")}
-                                        </td>
-                                      ))}
+                                      {detailColumns.map((dc) => {
+                                        const flagged = dc.danger && Number(d[dc.key]) > 0;
+                                        return (
+                                          <td
+                                            key={dc.key}
+                                            className={`px-3 py-1.5 whitespace-nowrap ${
+                                              dc.numeric ? "text-right tabular-nums" : "text-left"
+                                            } ${flagged ? "text-red-600 dark:text-red-400 font-medium" : "text-slate-700 dark:text-slate-300"}`}
+                                          >
+                                            {String(d[dc.key] ?? "—")}
+                                          </td>
+                                        );
+                                      })}
                                     </tr>
                                   ))
                                 )}

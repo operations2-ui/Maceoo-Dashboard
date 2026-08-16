@@ -357,6 +357,8 @@ export interface RetailAuditDetailRow {
   po_quantity: string | null;
   quantity_received: string | null;
   quantity_shipped: string | null;
+  diff_shipped_received: string | null;
+  diff_ordered_received: string | null;
 }
 
 /**
@@ -377,12 +379,14 @@ export async function getRetailAuditDetail(poNumber: string): Promise<RetailAudi
        p.display_name as item_name,
        p.quantity as po_quantity,
        a.quantity_received,
-       a.quantity_shipped
+       a.quantity_shipped,
+       a.quantity_shipped - a.quantity_received as diff_shipped_received,
+       p.quantity - a.quantity_received as diff_ordered_received
      from po_raw_data p
      left join retail_audit_raw_data a
        on a.po_number = p.document_number and a.sku = trim(split_part(p.item, ':', 2))
      where p.document_number = $1
-     order by p.line_id`,
+     order by (a.quantity_shipped - a.quantity_received) desc nulls last, p.line_id`,
     [poNumber],
   );
   return rows;
