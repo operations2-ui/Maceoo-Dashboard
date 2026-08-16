@@ -369,7 +369,10 @@ export interface RetailAuditDetailRow {
  * be missing entirely if this queried Retail Audit Data directly. Instead,
  * every SKU on the PO is listed (from All PO Data), left-joined against
  * Retail Audit Data by SKU to fill in Quantity Received/Shipped where a
- * match exists — blank where it doesn't (not yet audited).
+ * match exists. Missing Shipped/Received are treated as 0 rather than left
+ * blank — "not received" and "not yet audited" both mean nothing has arrived
+ * yet, so the difference columns should show the real shortfall either way
+ * (e.g. shipped 1, received blank -> Shipped - Received = 1, not "—").
  */
 export async function getRetailAuditDetail(poNumber: string): Promise<RetailAuditDetailRow[]> {
   const { rows } = await pool.query(
@@ -378,15 +381,15 @@ export async function getRetailAuditDetail(poNumber: string): Promise<RetailAudi
        trim(split_part(p.item, ':', 2)) as sku,
        p.display_name as item_name,
        p.quantity as po_quantity,
-       a.quantity_received,
-       a.quantity_shipped,
-       a.quantity_shipped - a.quantity_received as diff_shipped_received,
-       p.quantity - a.quantity_received as diff_ordered_received
+       coalesce(a.quantity_received, 0) as quantity_received,
+       coalesce(a.quantity_shipped, 0) as quantity_shipped,
+       coalesce(a.quantity_shipped, 0) - coalesce(a.quantity_received, 0) as diff_shipped_received,
+       p.quantity - coalesce(a.quantity_received, 0) as diff_ordered_received
      from po_raw_data p
      left join retail_audit_raw_data a
        on a.po_number = p.document_number and a.sku = trim(split_part(p.item, ':', 2))
      where p.document_number = $1
-     order by (a.quantity_shipped - a.quantity_received) desc nulls last, p.line_id`,
+     order by (coalesce(a.quantity_shipped, 0) - coalesce(a.quantity_received, 0)) desc, p.line_id`,
     [poNumber],
   );
   return rows;

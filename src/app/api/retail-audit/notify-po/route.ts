@@ -40,9 +40,7 @@ export async function POST(request: Request) {
   }
 
   const detail = await getRetailAuditDetail(poNumber);
-  const discrepancies = detail.filter(
-    (d) => d.quantity_shipped != null && d.quantity_received != null && Number(d.diff_shipped_received) > 0,
-  );
+  const discrepancies = detail.filter((d) => Number(d.diff_shipped_received) > 0);
   if (discrepancies.length === 0) {
     return NextResponse.json({ error: "No shipped/received discrepancies found for this PO." }, { status: 400 });
   }
