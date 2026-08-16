@@ -321,3 +321,56 @@ export async function getEmployeeSummary(storeIds: string[], fromDate: string, t
   );
   return rows;
 }
+
+export interface RetailAuditDashboardRow {
+  [key: string]: unknown;
+  po_number: string;
+  po_date: string | null;
+  po_status: string | null;
+  related_sp: string | null;
+  vendor_name: string | null;
+  ordered_quantity: string | null;
+  billed_quantity: string | null;
+  shipped_quantity: string | null;
+  received_quantity: string | null;
+  diff_shipped_received: string | null;
+  diff_received_billed: string | null;
+}
+
+/** Not store-scoped — this is procurement/vendor audit data, not tied to the store access model. */
+export async function getRetailAuditDashboard(): Promise<RetailAuditDashboardRow[]> {
+  const { rows } = await pool.query(
+    `select po_number, to_char(po_date, 'YYYY-MM-DD') as po_date, po_status, related_sp, vendor_name,
+            ordered_quantity, billed_quantity, shipped_quantity, received_quantity,
+            diff_shipped_received, diff_received_billed
+     from retail_audit_dashboard
+     order by po_date desc nulls last, po_number desc`,
+  );
+  return rows;
+}
+
+export interface RetailAuditDetailRow {
+  [key: string]: unknown;
+  po_number: string;
+  vendor: string | null;
+  po_date: string | null;
+  sku: string | null;
+  item_name: string | null;
+  sp_number: string | null;
+  quantity_received: string | null;
+  quantity_billed: string | null;
+  quantity_shipped: string | null;
+}
+
+/** SKU-level drill-down for one PO, shown when a Retail Audit summary row is expanded. */
+export async function getRetailAuditDetail(poNumber: string): Promise<RetailAuditDetailRow[]> {
+  const { rows } = await pool.query(
+    `select po_number, vendor, to_char(po_date, 'YYYY-MM-DD') as po_date, sku, item_name, sp_number,
+            quantity_received, quantity_billed, quantity_shipped
+     from retail_audit_raw_data
+     where po_number = $1
+     order by id`,
+    [poNumber],
+  );
+  return rows;
+}

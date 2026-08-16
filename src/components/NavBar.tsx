@@ -11,6 +11,7 @@ const links = [
   { href: "/inventory/missing-sizes", label: "Missing Sizes" },
   { href: "/sales", label: "Sales" },
   { href: "/discounts-analysis", label: "Discounts Analysis" },
+  { href: "/retail-audit", label: "Retail Audit" },
 ];
 
 const adminLinks = [

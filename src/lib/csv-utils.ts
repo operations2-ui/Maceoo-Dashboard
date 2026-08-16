@@ -59,3 +59,24 @@ export function rowsToCsv(rows: string[][]): string {
     )
     .join("\n");
 }
+
+/**
+ * Like rowsToCsv, but for COPY-loading tables with nullable numeric/date
+ * columns. rowsToCsv always quotes blanks as `""`, which COPY reads as the
+ * literal empty string — invalid for a numeric/date column. Here, null
+ * becomes a genuinely empty (unquoted) field, which COPY's CSV format reads
+ * as SQL NULL.
+ */
+export function rowsToCsvNullable(rows: (string | number | null)[][]): string {
+  return rows
+    .map((row) =>
+      row
+        .map((cellValue) => {
+          if (cellValue === null || cellValue === undefined) return "";
+          const s = String(cellValue);
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        })
+        .join(","),
+    )
+    .join("\n");
+}

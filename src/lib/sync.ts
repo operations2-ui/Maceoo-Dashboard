@@ -6,8 +6,9 @@ import { pool } from "./db";
 import { getDriveClient, getSheetsClient } from "./google-clients";
 import { parseInventoryCsv, dateFromFilename, type InventoryRow } from "./inventory-parser";
 import { parseSalesCsv } from "./sales-parser";
+import { parsePoRawCsv, parseRetailAuditRawCsv, parseDashboardCsv } from "./retail-audit-parser";
 import { resolveStoreId, type StoreRef, type StoreAlias } from "./store-resolver";
-import { rowsToCsv } from "./csv-utils";
+import { rowsToCsv, rowsToCsvNullable } from "./csv-utils";
 import { parseFlexibleDate } from "./date-utils";
 
 export type SyncProgress = (message: string) => void;
@@ -81,6 +82,7 @@ export interface SyncSummary {
   inventoryStoppedEarly: boolean;
   discounts: { imported: number; skipped: number; unmatchedLocations: string[] } | null;
   sales: { imported: number; skipped: number; unmatchedLocations: string[] } | null;
+  retailAudit: { poRows: number; auditRows: number; dashboardRows: number } | null;
   errors: string[];
 }
 
@@ -749,6 +751,102 @@ async function syncSalesFromSheet(
   };
 }
 
+async function copyLoadTable(
+  client: import("pg").PoolClient,
+  table: string,
+  columns: string[],
+  rows: (string | number | null)[][],
+): Promise<void> {
+  await client.query(`truncate table ${table}`);
+  if (rows.length === 0) return;
+  await streamCopy(client, `COPY ${table} (${columns.join(", ")}) FROM STDIN WITH (FORMAT csv)`, rowsToCsvNullable(rows));
+}
+
+/**
+ * Full overwrite (truncate + reload), not incremental like sales — PO status
+ * and quantities get corrected in place over a PO's lifecycle, so there's no
+ * append-only watermark to track. All three tabs load in one transaction so
+ * a run that dies partway leaves the old data intact rather than mismatched
+ * (e.g. a fresh dashboard next to a stale raw-data table).
+ */
+async function syncRetailAuditFromSheet(
+  sheetId: string,
+  onProgress: SyncProgress = noopProgress,
+): Promise<SyncSummary["retailAudit"]> {
+  onProgress("Fetching PO / Retail Audit sheet");
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.batchGet(
+    {
+      spreadsheetId: sheetId,
+      ranges: ["'All PO Raw Data'!A:Z", "'Retail Audit Raw Data'!A:Z", "'Dashboard'!A:R"],
+    },
+    { timeout: GOOGLE_REQUEST_TIMEOUT_MS },
+  );
+  const [poRes, auditRes, dashRes] = res.data.valueRanges ?? [];
+  const poRows = parsePoRawCsv(rowsToCsv((poRes?.values ?? []) as string[][]));
+  const auditRows = parseRetailAuditRawCsv(rowsToCsv((auditRes?.values ?? []) as string[][]));
+  const dashboardRows = parseDashboardCsv(rowsToCsv((dashRes?.values ?? []) as string[][]));
+
+  onProgress(
+    `Loading PO/Retail Audit data (${poRows.length.toLocaleString("en-US")} PO lines, ${auditRows.length.toLocaleString("en-US")} audit lines, ${dashboardRows.length.toLocaleString("en-US")} POs)`,
+  );
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await copyLoadTable(
+      client,
+      "po_raw_data",
+      [
+        "internal_id", "document_number", "po_date", "vendor_name", "location", "status", "mac_po_type",
+        "mac_po_status", "po_start_date", "po_cancel_date", "due_date", "expected_receipt_date", "memo",
+        "line_id", "item", "display_name", "quantity", "quantity_fulfilled_received", "inventory_location",
+        "quantity_billed", "quantity_committed",
+      ],
+      poRows.map((r) => [
+        r.internalId, r.documentNumber, r.poDate, r.vendorName, r.location, r.status, r.macPoType,
+        r.macPoStatus, r.poStartDate, r.poCancelDate, r.dueDate, r.expectedReceiptDate, r.memo,
+        r.lineId, r.item, r.displayName, r.quantity, r.quantityFulfilledReceived, r.inventoryLocation,
+        r.quantityBilled, r.quantityCommitted,
+      ]),
+    );
+    await copyLoadTable(
+      client,
+      "retail_audit_raw_data",
+      [
+        "vendor", "po_number", "purchasing_trans_type", "po_date", "sku", "item_name", "quantity_received",
+        "quantity_billed", "customer", "sp_number", "sales_trans_type", "sales_trans_date", "quantity_shipped",
+        "quantity_invoiced",
+      ],
+      auditRows.map((r) => [
+        r.vendor, r.poNumber, r.purchasingTransType, r.poDate, r.sku, r.itemName, r.quantityReceived,
+        r.quantityBilled, r.customer, r.spNumber, r.salesTransType, r.salesTransDate, r.quantityShipped,
+        r.quantityInvoiced,
+      ]),
+    );
+    await copyLoadTable(
+      client,
+      "retail_audit_dashboard",
+      [
+        "po_number", "po_date", "po_status", "related_sp", "vendor_name", "ordered_quantity",
+        "billed_quantity", "shipped_quantity", "received_quantity", "diff_shipped_received", "diff_received_billed",
+      ],
+      dashboardRows.map((r) => [
+        r.poNumber, r.poDate, r.poStatus, r.relatedSp, r.vendorName, r.orderedQuantity,
+        r.billedQuantity, r.shippedQuantity, r.receivedQuantity, r.diffShippedReceived, r.diffReceivedBilled,
+      ]),
+    );
+    await client.query("commit");
+  } catch (e) {
+    await client.query("rollback");
+    throw e;
+  } finally {
+    client.release();
+  }
+
+  return { poRows: poRows.length, auditRows: auditRows.length, dashboardRows: dashboardRows.length };
+}
+
 export async function runSync(
   onProgress: SyncProgress = noopProgress,
   checkCancelled: CancelCheck = noopCancelCheck,
@@ -839,6 +937,17 @@ export async function runSync(
     errors.push("SALES_SHEET_ID is not set; skipped sales/discounts sync");
   }
 
+  await throwIfCancelled(checkCancelled);
+  let retailAudit: SyncSummary["retailAudit"] = null;
+  const poSheetId = process.env.PO_SHEET_ID;
+  if (poSheetId) {
+    try {
+      retailAudit = await syncRetailAuditFromSheet(poSheetId, onProgress);
+    } catch (e) {
+      errors.push(`PO/Retail Audit sync failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   onProgress("Finishing up");
-  return { ...inventoryResult, inventoryPruned, discounts, sales, errors };
+  return { ...inventoryResult, inventoryPruned, discounts, sales, retailAudit, errors };
 }
