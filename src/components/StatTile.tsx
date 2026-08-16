@@ -1,33 +1,5 @@
 import Link from "next/link";
 
-function Sparkline({ data }: { data: number[] }) {
-  if (data.length < 2) return null;
-  const w = 72;
-  const h = 24;
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-  const points = data
-    .map((v, i) => {
-      const x = (i / (data.length - 1)) * w;
-      const y = h - ((v - min) / range) * h;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} className="shrink-0">
-      <polyline
-        points={points}
-        fill="none"
-        stroke="var(--chart-line)"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function isGoodDelta(deltaPct: number, dir: "up" | "down"): boolean {
   return dir === "up" ? deltaPct >= 0 : deltaPct <= 0;
 }
@@ -41,7 +13,6 @@ interface StatTileProps {
   deltaGoodDirection?: "up" | "down";
   /** The comparison period's actual date range, e.g. "Jun 17 – Jul 16, 2026" — shown alongside the delta so "vs previous period" has a concrete meaning instead of being a vague label. */
   comparisonLabel?: string;
-  sparkline?: number[];
   href?: string;
   tone?: "default" | "critical" | "warning";
 }
@@ -52,7 +23,6 @@ export default function StatTile({
   deltaPct,
   deltaGoodDirection = "up",
   comparisonLabel,
-  sparkline,
   href,
   tone = "default",
 }: StatTileProps) {
@@ -66,9 +36,8 @@ export default function StatTile({
   const inner = (
     <>
       <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
-      <div className="mt-1.5 flex items-end justify-between gap-2">
+      <div className="mt-1.5">
         <p className={`text-2xl font-semibold ${toneClass}`}>{value}</p>
-        {sparkline && sparkline.length > 1 && <Sparkline data={sparkline} />}
       </div>
       {deltaPct != null && (
         <p

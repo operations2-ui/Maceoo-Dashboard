@@ -109,7 +109,6 @@ export default async function Home() {
           value={money(totals.netSales)}
           deltaPct={pctDelta(totals.netSales, prevTotals.netSales)}
           comparisonLabel={comparisonLabel}
-          sparkline={trend.map((t) => t.value)}
         />
         <StatTile
           label="Total orders"
