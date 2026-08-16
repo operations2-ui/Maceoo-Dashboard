@@ -89,6 +89,8 @@ export default async function Home() {
     .slice(0, 8)
     .map(([store, value], i) => ({ rank: i + 1, label: store, value: money(value) }));
 
+  const comparisonLabel = formatDateRange(prevFromDate, prevToDate);
+
   return (
     <div>
       <div className="flex items-baseline justify-between flex-wrap gap-2 mb-1">
@@ -106,22 +108,26 @@ export default async function Home() {
           label="Net sales"
           value={money(totals.netSales)}
           deltaPct={pctDelta(totals.netSales, prevTotals.netSales)}
+          comparisonLabel={comparisonLabel}
           sparkline={trend.map((t) => t.value)}
         />
         <StatTile
           label="Total orders"
           value={totals.orders.toLocaleString("en-US")}
           deltaPct={pctDelta(totals.orders, prevTotals.orders)}
+          comparisonLabel={comparisonLabel}
         />
         <StatTile
           label="Gross margin"
           value={money(totals.grossMargin)}
           deltaPct={pctDelta(totals.grossMargin, prevTotals.grossMargin)}
+          comparisonLabel={comparisonLabel}
         />
         <StatTile
           label="Average order value"
           value={money(avgOrderValue)}
           deltaPct={pctDelta(avgOrderValue, prevAvgOrderValue)}
+          comparisonLabel={comparisonLabel}
         />
       </div>
 
@@ -130,6 +136,7 @@ export default async function Home() {
           label="Discounts given"
           value={money(totalDiscounts)}
           deltaPct={pctDelta(totalDiscounts, prevTotalDiscounts)}
+          comparisonLabel={comparisonLabel}
           deltaGoodDirection="down"
           href="/sales"
         />

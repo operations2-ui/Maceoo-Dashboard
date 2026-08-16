@@ -20,6 +20,14 @@ function getPool(): Pool {
     global._pgPool = new Pool({
       connectionString,
       ssl: isLocal ? undefined : { rejectUnauthorized: false },
+      // pg's default (10) isn't enough: several report pages fan out one
+      // query per store (e.g. getMissingSizes), and with 15 stores that
+      // alone can need more simultaneous connections than the default pool
+      // has — the rest queue for a connection, and once enough of them queue
+      // long enough, they blow past connectionTimeoutMillis below ("timeout
+      // exceeded when trying to connect") or even statement_timeout, despite
+      // each individual query running in well under a second on its own.
+      max: 20,
       // Postgres statement_timeout covers time spent waiting on a lock, not
       // just execution — without it, one stuck/aborted sync leaving a lock
       // held can silently hang every later query that touches the same rows.

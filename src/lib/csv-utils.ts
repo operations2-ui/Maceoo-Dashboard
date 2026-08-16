@@ -65,7 +65,12 @@ export function rowsToCsv(rows: string[][]): string {
  * columns. rowsToCsv always quotes blanks as `""`, which COPY reads as the
  * literal empty string — invalid for a numeric/date column. Here, null
  * becomes a genuinely empty (unquoted) field, which COPY's CSV format reads
- * as SQL NULL.
+ * as SQL NULL — while an empty *string* value (as opposed to null) is always
+ * quoted as `""` so it round-trips as an empty string, not NULL. Getting
+ * this distinction wrong silently turns "" into NULL for every column,
+ * which only surfaces as an error on a NOT NULL text column (e.g.
+ * sales_by_user.user_name) — other nullable text columns would accept it
+ * silently and just be wrong.
  */
 export function rowsToCsvNullable(rows: (string | number | null)[][]): string {
   return rows
@@ -73,8 +78,8 @@ export function rowsToCsvNullable(rows: (string | number | null)[][]): string {
       row
         .map((cellValue) => {
           if (cellValue === null || cellValue === undefined) return "";
-          const s = String(cellValue);
-          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+          if (typeof cellValue === "number") return String(cellValue);
+          return `"${cellValue.replace(/"/g, '""')}"`;
         })
         .join(","),
     )

@@ -39,6 +39,8 @@ interface StatTileProps {
   deltaPct?: number | null;
   /** Whether an increase counts as good news (default) or bad (e.g. a cost metric). */
   deltaGoodDirection?: "up" | "down";
+  /** The comparison period's actual date range, e.g. "Jun 17 – Jul 16, 2026" — shown alongside the delta so "vs previous period" has a concrete meaning instead of being a vague label. */
+  comparisonLabel?: string;
   sparkline?: number[];
   href?: string;
   tone?: "default" | "critical" | "warning";
@@ -49,6 +51,7 @@ export default function StatTile({
   value,
   deltaPct,
   deltaGoodDirection = "up",
+  comparisonLabel,
   sparkline,
   href,
   tone = "default",
@@ -75,7 +78,10 @@ export default function StatTile({
               : "text-[var(--chart-status-critical)]"
           }`}
         >
-          {deltaPct >= 0 ? "▲" : "▼"} {Math.abs(deltaPct).toFixed(1)}% vs previous period
+          {deltaPct >= 0 ? "▲" : "▼"} {Math.abs(deltaPct).toFixed(1)}%{" "}
+          <span className="font-normal text-slate-500 dark:text-slate-400">
+            vs {comparisonLabel ?? "previous period"}
+          </span>
         </p>
       )}
     </>
