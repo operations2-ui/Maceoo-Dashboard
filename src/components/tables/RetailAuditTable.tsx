@@ -211,8 +211,14 @@ export default function RetailAuditTable({ rows }: { rows: RetailAuditDashboardR
                               <NotifyRetailAuditButton poNumber={r.po_number} />
                             )}
                           {detailCache[r.po_number] && (
-                            <table className="w-full text-sm border-collapse bg-white dark:bg-slate-900 rounded-md overflow-hidden">
-                              <thead>
+                            // Its own bounded, independently-scrolling region with its own
+                            // sticky header — without this, scrolling a long PO's SKU list
+                            // inside the outer table's scroll container left the *outer*
+                            // table's PO-level sticky header pinned on top of these rows,
+                            // making it look like those column labels applied here instead.
+                            <div className="max-h-[50vh] overflow-auto rounded-md">
+                            <table className="w-full text-sm border-collapse bg-white dark:bg-slate-900">
+                              <thead className="sticky top-0 z-10">
                                 <tr className="bg-slate-200 dark:bg-slate-800">
                                   {detailColumns.map((dc) => (
                                     <th
@@ -254,6 +260,7 @@ export default function RetailAuditTable({ rows }: { rows: RetailAuditDashboardR
                                 )}
                               </tbody>
                             </table>
+                            </div>
                           )}
                         </div>
                       </td>
