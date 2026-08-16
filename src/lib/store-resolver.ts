@@ -6,7 +6,7 @@ export interface StoreRef {
 
 export interface StoreAlias {
   store_id: string;
-  source: "inventory" | "sheet";
+  source: "inventory" | "sheet" | "vendor";
   alias_name: string;
 }
 
@@ -24,7 +24,7 @@ export function resolveStoreId(
   name: string,
   stores: StoreRef[],
   aliases: StoreAlias[] = [],
-  source?: "inventory" | "sheet",
+  source?: "inventory" | "sheet" | "vendor",
 ): string | null {
   const trimmed = name.trim().toLowerCase();
 

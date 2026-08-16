@@ -12,7 +12,7 @@ interface Store {
 }
 interface Alias {
   store_id: string;
-  source: "inventory" | "sheet";
+  source: "inventory" | "sheet" | "vendor";
   alias_name: string;
 }
 
@@ -81,7 +81,15 @@ function AddStoreForm() {
   );
 }
 
-function AliasCell({ storeId, source, initial }: { storeId: string; source: "inventory" | "sheet"; initial: string[] }) {
+function AliasCell({
+  storeId,
+  source,
+  initial,
+}: {
+  storeId: string;
+  source: "inventory" | "sheet" | "vendor";
+  initial: string[];
+}) {
   const initialValue = initial.join(", ");
   const [value, setValue] = useState(initialValue);
   // Tracks the last value actually persisted, separate from `initial` (which only
@@ -240,6 +248,9 @@ export default function StoreMaster({ stores, aliases }: { stores: Store[]; alia
               Sheet Location Name alias(es)
             </th>
             <th className="px-3 py-2 text-left font-medium text-slate-600 dark:text-slate-300">
+              Vendor Name (NetSuite) alias(es)
+            </th>
+            <th className="px-3 py-2 text-left font-medium text-slate-600 dark:text-slate-300">
               Prior-Day Oversell Alert — To / CC Email
             </th>
           </tr>
@@ -261,6 +272,13 @@ export default function StoreMaster({ stores, aliases }: { stores: Store[]; alia
                   storeId={s.id}
                   source="sheet"
                   initial={aliases.filter((a) => a.store_id === s.id && a.source === "sheet").map((a) => a.alias_name)}
+                />
+              </td>
+              <td className="px-3 py-2">
+                <AliasCell
+                  storeId={s.id}
+                  source="vendor"
+                  initial={aliases.filter((a) => a.store_id === s.id && a.source === "vendor").map((a) => a.alias_name)}
                 />
               </td>
               <td className="px-3 py-2">

@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   const { storeId, source, aliases } = await request.json();
   if (
     typeof storeId !== "string" ||
-    (source !== "inventory" && source !== "sheet") ||
+    (source !== "inventory" && source !== "sheet" && source !== "vendor") ||
     !Array.isArray(aliases)
   ) {
     return NextResponse.json({ error: "storeId, source, and aliases[] are required" }, { status: 400 });
