@@ -12,7 +12,7 @@ export default function NavLinks({ links }: { links: NavLink[] }) {
   const pathname = usePathname();
 
   return (
-    <nav className="flex items-center gap-1.5 flex-wrap">
+    <nav className="flex items-center gap-1.5 flex-nowrap">
       {links.map((l) => {
         const active = pathname === l.href || pathname.startsWith(`${l.href}/`);
         return (

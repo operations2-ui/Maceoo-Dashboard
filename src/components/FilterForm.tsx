@@ -1,10 +1,11 @@
 import type { AccessibleStore } from "@/lib/authz";
 
-// Sticks directly below NavBar (h-24 + h-12 = 144px = top-36) so the active
-// store/date filter stays visible while scrolling through report tables —
-// otherwise it's easy to lose track of which slice of data is on screen.
+// Sticks directly below NavBar. NavBar's own height is responsive (h-16+h-12
+// on mobile = 112px = top-28; h-24+h-12 on sm+ = 144px = top-36) — must track
+// NavBar's breakpoint exactly or this offset drifts and the filter overlaps
+// either the nav or the page content.
 const stickyBarClass =
-  "sticky top-36 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3 mb-6 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800";
+  "sticky top-28 sm:top-36 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3 mb-6 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800";
 
 export function StoreDateFilter({
   stores,
@@ -47,7 +48,7 @@ export function StoreDateFilter({
         <button type="submit" className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5">
           Apply
         </button>
-        <span className="text-sm text-slate-500 dark:text-slate-400 ml-auto">
+        <span className="text-sm text-slate-500 dark:text-slate-400 w-full sm:w-auto sm:ml-auto">
           Showing: <span className="font-medium text-slate-700 dark:text-slate-200">{storeName}</span> ·{" "}
           <span className="font-medium text-slate-700 dark:text-slate-200">{date ?? yesterday}</span>
         </span>
@@ -109,7 +110,7 @@ export function StoreDateRangeFilter({
         <button type="submit" className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5">
           Apply
         </button>
-        <span className="text-sm text-slate-500 dark:text-slate-400 ml-auto">
+        <span className="text-sm text-slate-500 dark:text-slate-400 w-full sm:w-auto sm:ml-auto">
           Showing: <span className="font-medium text-slate-700 dark:text-slate-200">{storeName}</span> ·{" "}
           <span className="font-medium text-slate-700 dark:text-slate-200">
             {from ?? monthAgo} to {to ?? today}

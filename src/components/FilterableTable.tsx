@@ -124,7 +124,7 @@ export default function FilterableTable<T extends Record<string, unknown>>({
             Clear filters
           </button>
         )}
-        <span className="text-sm text-slate-500 dark:text-slate-400 ml-auto">
+        <span className="text-sm text-slate-500 dark:text-slate-400 w-full sm:w-auto sm:ml-auto">
           {hasActiveFilters ? (
             <>
               {filteredRows.length.toLocaleString("en-US")} of {rows.length.toLocaleString("en-US")} rows

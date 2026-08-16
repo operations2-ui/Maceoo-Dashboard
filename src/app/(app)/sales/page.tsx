@@ -64,7 +64,7 @@ export default async function SalesPage({
         </div>
       )}
 
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
           <p className="text-xs text-slate-500 dark:text-slate-400">Total Orders</p>
           <p className="text-xl font-semibold text-slate-900 dark:text-white">
