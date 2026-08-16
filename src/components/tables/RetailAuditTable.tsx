@@ -125,12 +125,10 @@ export default function RetailAuditTable({ rows }: { rows: RetailAuditDashboardR
                   <th
                     key={c.key}
                     onClick={() => toggleSort(c.key)}
-                    className={`px-3 py-2 text-left font-semibold text-white whitespace-nowrap cursor-pointer select-none ${
-                      c.danger ? "bg-red-800 hover:bg-red-700" : "bg-emerald-800 hover:bg-emerald-700"
-                    }`}
+                    className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 whitespace-nowrap cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-700"
                   >
                     {c.header}
-                    <span className="ml-1 text-xs opacity-70">
+                    <span className="ml-1 text-xs opacity-60">
                       {sort.key === c.key ? (sort.dir === "asc" ? "▲" : "▼") : "▽"}
                     </span>
                   </th>
@@ -148,16 +146,23 @@ export default function RetailAuditTable({ rows }: { rows: RetailAuditDashboardR
                         : "odd:bg-white even:bg-slate-50/60 dark:odd:bg-slate-900 dark:even:bg-slate-800/40 hover:bg-blue-50/60 dark:hover:bg-slate-800"
                     }`}
                   >
-                    {columns.map((c) => (
-                      <td
-                        key={c.key}
-                        className={`px-3 py-2 whitespace-nowrap ${c.numeric ? "text-right tabular-nums" : "text-left"} ${
-                          c.key === "po_number" ? "font-medium text-blue-700 dark:text-blue-400" : "text-slate-700 dark:text-slate-300"
-                        }`}
-                      >
-                        {String(r[c.key] ?? "—")}
-                      </td>
-                    ))}
+                    {columns.map((c) => {
+                      const flagged = c.danger && Number(r[c.key]) !== 0;
+                      return (
+                        <td
+                          key={c.key}
+                          className={`px-3 py-2 whitespace-nowrap ${c.numeric ? "text-right tabular-nums" : "text-left"} ${
+                            c.key === "po_number"
+                              ? "font-medium text-blue-700 dark:text-blue-400"
+                              : flagged
+                                ? "text-red-600 dark:text-red-400 font-medium"
+                                : "text-slate-700 dark:text-slate-300"
+                          }`}
+                        >
+                          {String(r[c.key] ?? "—")}
+                        </td>
+                      );
+                    })}
                   </tr>
                   {expanded === r.po_number && (
                     <tr>
