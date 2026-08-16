@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface Store {
@@ -14,6 +14,35 @@ interface Alias {
   store_id: string;
   source: "inventory" | "sheet" | "vendor";
   alias_name: string;
+}
+
+interface StoreFormState {
+  inventory: string;
+  sheet: string;
+  vendor: string;
+  toEmail: string;
+  ccEmail: string;
+}
+
+function aliasesFor(aliases: Alias[], storeId: string, source: Alias["source"]): string {
+  return aliases
+    .filter((a) => a.store_id === storeId && a.source === source)
+    .map((a) => a.alias_name)
+    .join(", ");
+}
+
+function buildInitialState(stores: Store[], aliases: Alias[]): Record<string, StoreFormState> {
+  const state: Record<string, StoreFormState> = {};
+  for (const s of stores) {
+    state[s.id] = {
+      inventory: aliasesFor(aliases, s.id, "inventory"),
+      sheet: aliasesFor(aliases, s.id, "sheet"),
+      vendor: aliasesFor(aliases, s.id, "vendor"),
+      toEmail: s.to_email ?? "",
+      ccEmail: s.cc_email ?? "",
+    };
+  }
+  return state;
 }
 
 function AddStoreForm() {
@@ -81,160 +110,142 @@ function AddStoreForm() {
   );
 }
 
-function AliasCell({
-  storeId,
-  source,
-  initial,
-}: {
-  storeId: string;
-  source: "inventory" | "sheet" | "vendor";
-  initial: string[];
-}) {
-  const initialValue = initial.join(", ");
-  const [value, setValue] = useState(initialValue);
-  // Tracks the last value actually persisted, separate from `initial` (which only
-  // updates on a full page refresh) so the Save button un-highlights right after saving.
-  const [savedValue, setSavedValue] = useState(initialValue);
-  const [saving, setSaving] = useState(false);
-  const [savedAt, setSavedAt] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const dirty = value !== savedValue;
-
-  async function save() {
-    if (!dirty) return;
-    setSaving(true);
-    setError(null);
-    const aliases = value
-      .split(",")
-      .map((a) => a.trim())
-      .filter(Boolean);
-    const res = await fetch("/api/admin/store-aliases", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ storeId, source, aliases }),
-    });
-    const data = await res.json();
-    setSaving(false);
-    if (!res.ok) {
-      setError(data.error ?? "Save failed");
-    } else {
-      setSavedValue(value);
-      setSavedAt(Date.now());
-      setTimeout(() => setSavedAt(null), 1500);
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => {
-          setValue(e.target.value);
-          setError(null);
-        }}
-        placeholder="comma-separated aliases"
-        className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-2 py-1 text-sm w-64"
-      />
-      <button
-        type="button"
-        onClick={save}
-        disabled={saving || !dirty}
-        className={`rounded-md text-white text-xs font-medium px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed ${
-          dirty ? "bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500" : "bg-slate-300 dark:bg-slate-700"
-        }`}
-      >
-        {saving ? "Saving…" : "Save"}
-      </button>
-      {savedAt && <span className="text-xs text-green-600 dark:text-green-400">Saved</span>}
-      {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
-    </div>
-  );
-}
-
-function EmailPairCell({
-  storeId,
-  initialTo,
-  initialCc,
-}: {
-  storeId: string;
-  initialTo: string | null;
-  initialCc: string | null;
-}) {
-  const [to, setTo] = useState(initialTo ?? "");
-  const [cc, setCc] = useState(initialCc ?? "");
-  // Tracks the last persisted values, separate from the initial props (which only
-  // update on a full page refresh) so the Save button un-highlights right after saving.
-  const [savedTo, setSavedTo] = useState(initialTo ?? "");
-  const [savedCc, setSavedCc] = useState(initialCc ?? "");
-  const [saving, setSaving] = useState(false);
-  const [savedAt, setSavedAt] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const dirty = to !== savedTo || cc !== savedCc;
-
-  async function save() {
-    if (!dirty) return;
-    setSaving(true);
-    setError(null);
-    const res = await fetch("/api/admin/store-emails", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ storeId, toEmail: to, ccEmail: cc }),
-    });
-    const data = await res.json();
-    setSaving(false);
-    if (!res.ok) {
-      setError(data.error ?? "Save failed");
-    } else {
-      setSavedTo(to);
-      setSavedCc(cc);
-      setSavedAt(Date.now());
-      setTimeout(() => setSavedAt(null), 1500);
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-2 flex-wrap">
-      <input
-        type="email"
-        value={to}
-        onChange={(e) => {
-          setTo(e.target.value);
-          setError(null);
-        }}
-        placeholder="To email"
-        className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-2 py-1 text-sm w-48"
-      />
-      <input
-        type="email"
-        value={cc}
-        onChange={(e) => {
-          setCc(e.target.value);
-          setError(null);
-        }}
-        placeholder="CC email (optional)"
-        className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-2 py-1 text-sm w-48"
-      />
-      <button
-        type="button"
-        onClick={save}
-        disabled={saving || !dirty}
-        className={`rounded-md text-white text-xs font-medium px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed ${
-          dirty ? "bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500" : "bg-slate-300 dark:bg-slate-700"
-        }`}
-      >
-        {saving ? "Saving…" : "Save"}
-      </button>
-      {savedAt && <span className="text-xs text-green-600 dark:text-green-400">Saved</span>}
-      {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
-    </div>
-  );
+function fieldInputClass(dirty: boolean) {
+  return `rounded-md border px-2 py-1 text-sm dark:bg-slate-800 dark:text-white ${
+    dirty
+      ? "border-amber-400 dark:border-amber-500 ring-1 ring-amber-200 dark:ring-amber-900"
+      : "border-slate-300 dark:border-slate-700"
+  }`;
 }
 
 export default function StoreMaster({ stores, aliases }: { stores: Store[]; aliases: Alias[] }) {
+  const router = useRouter();
+  // `saved` is the last-persisted baseline used for dirty-checking — separate
+  // from the `stores`/`aliases` props (which only refresh on router.refresh())
+  // so fields un-highlight immediately after a successful save.
+  const initial = useMemo(() => buildInitialState(stores, aliases), [stores, aliases]);
+  const [values, setValues] = useState(initial);
+  const [saved, setSaved] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<{ savedCount: number; errors: string[] } | null>(null);
+
+  function setField(storeId: string, field: keyof StoreFormState, value: string) {
+    setValues((prev) => ({ ...prev, [storeId]: { ...prev[storeId], [field]: value } }));
+    setResult(null);
+  }
+
+  const dirtyStores = stores.filter((s) => {
+    const v = values[s.id];
+    const sv = saved[s.id];
+    return (
+      v.inventory !== sv.inventory ||
+      v.sheet !== sv.sheet ||
+      v.vendor !== sv.vendor ||
+      v.toEmail !== sv.toEmail ||
+      v.ccEmail !== sv.ccEmail
+    );
+  });
+  const dirty = dirtyStores.length > 0;
+
+  async function saveAll() {
+    if (!dirty) return;
+    setSaving(true);
+    setResult(null);
+
+    const errors: string[] = [];
+    let savedCount = 0;
+    const nextSaved = { ...saved };
+
+    await Promise.all(
+      dirtyStores.map(async (s) => {
+        const v = values[s.id];
+        const sv = saved[s.id];
+        const tasks: Promise<void>[] = [];
+
+        (["inventory", "sheet", "vendor"] as const).forEach((source) => {
+          if (v[source] === sv[source]) return;
+          const aliasList = v[source]
+            .split(",")
+            .map((a) => a.trim())
+            .filter(Boolean);
+          tasks.push(
+            fetch("/api/admin/store-aliases", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ storeId: s.id, source, aliases: aliasList }),
+            }).then(async (res) => {
+              if (!res.ok) {
+                const data = await res.json();
+                errors.push(`${s.name} (${source}): ${data.error ?? "save failed"}`);
+              } else {
+                nextSaved[s.id] = { ...nextSaved[s.id], [source]: v[source] };
+                savedCount++;
+              }
+            }),
+          );
+        });
+
+        if (v.toEmail !== sv.toEmail || v.ccEmail !== sv.ccEmail) {
+          tasks.push(
+            fetch("/api/admin/store-emails", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ storeId: s.id, toEmail: v.toEmail, ccEmail: v.ccEmail }),
+            }).then(async (res) => {
+              if (!res.ok) {
+                const data = await res.json();
+                errors.push(`${s.name} (email): ${data.error ?? "save failed"}`);
+              } else {
+                nextSaved[s.id] = { ...nextSaved[s.id], toEmail: v.toEmail, ccEmail: v.ccEmail };
+                savedCount++;
+              }
+            }),
+          );
+        }
+
+        await Promise.all(tasks);
+      }),
+    );
+
+    setSaved(nextSaved);
+    setSaving(false);
+    setResult({ savedCount, errors });
+    router.refresh();
+  }
+
   return (
     <div>
       <AddStoreForm />
+
+      <div className="flex items-center gap-3 mb-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
+        <button
+          type="button"
+          onClick={saveAll}
+          disabled={saving || !dirty}
+          className={`rounded-md text-white text-sm font-medium px-4 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed ${
+            dirty ? "bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500" : "bg-slate-300 dark:bg-slate-700"
+          }`}
+        >
+          {saving ? "Saving…" : "Save changes"}
+        </button>
+        {dirty && !saving && (
+          <span className="text-sm text-amber-600 dark:text-amber-400">
+            {dirtyStores.length} store{dirtyStores.length === 1 ? "" : "s"} with unsaved changes
+          </span>
+        )}
+        {result && result.errors.length === 0 && (
+          <span className="text-sm text-green-600 dark:text-green-400">
+            ✓ Saved {result.savedCount} change{result.savedCount === 1 ? "" : "s"}
+          </span>
+        )}
+        {result && result.errors.length > 0 && (
+          <div className="text-sm text-red-600 dark:text-red-400">
+            {result.savedCount > 0 && <span>Saved {result.savedCount}, but: </span>}
+            {result.errors.join("; ")}
+          </div>
+        )}
+      </div>
+
       <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
@@ -256,36 +267,61 @@ export default function StoreMaster({ stores, aliases }: { stores: Store[]; alia
           </tr>
         </thead>
         <tbody>
-          {stores.map((s) => (
-            <tr key={s.id} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
-              <td className="px-3 py-2 whitespace-nowrap font-medium text-slate-900 dark:text-white">{s.name}</td>
-              <td className="px-3 py-2 whitespace-nowrap text-slate-500 dark:text-slate-400">{s.code ?? "—"}</td>
-              <td className="px-3 py-2">
-                <AliasCell
-                  storeId={s.id}
-                  source="inventory"
-                  initial={aliases.filter((a) => a.store_id === s.id && a.source === "inventory").map((a) => a.alias_name)}
-                />
-              </td>
-              <td className="px-3 py-2">
-                <AliasCell
-                  storeId={s.id}
-                  source="sheet"
-                  initial={aliases.filter((a) => a.store_id === s.id && a.source === "sheet").map((a) => a.alias_name)}
-                />
-              </td>
-              <td className="px-3 py-2">
-                <AliasCell
-                  storeId={s.id}
-                  source="vendor"
-                  initial={aliases.filter((a) => a.store_id === s.id && a.source === "vendor").map((a) => a.alias_name)}
-                />
-              </td>
-              <td className="px-3 py-2">
-                <EmailPairCell storeId={s.id} initialTo={s.to_email} initialCc={s.cc_email} />
-              </td>
-            </tr>
-          ))}
+          {stores.map((s) => {
+            const v = values[s.id];
+            const sv = saved[s.id];
+            return (
+              <tr key={s.id} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                <td className="px-3 py-2 whitespace-nowrap font-medium text-slate-900 dark:text-white">{s.name}</td>
+                <td className="px-3 py-2 whitespace-nowrap text-slate-500 dark:text-slate-400">{s.code ?? "—"}</td>
+                <td className="px-3 py-2">
+                  <input
+                    type="text"
+                    value={v.inventory}
+                    onChange={(e) => setField(s.id, "inventory", e.target.value)}
+                    placeholder="comma-separated aliases"
+                    className={`${fieldInputClass(v.inventory !== sv.inventory)} w-64`}
+                  />
+                </td>
+                <td className="px-3 py-2">
+                  <input
+                    type="text"
+                    value={v.sheet}
+                    onChange={(e) => setField(s.id, "sheet", e.target.value)}
+                    placeholder="comma-separated aliases"
+                    className={`${fieldInputClass(v.sheet !== sv.sheet)} w-64`}
+                  />
+                </td>
+                <td className="px-3 py-2">
+                  <input
+                    type="text"
+                    value={v.vendor}
+                    onChange={(e) => setField(s.id, "vendor", e.target.value)}
+                    placeholder="comma-separated aliases"
+                    className={`${fieldInputClass(v.vendor !== sv.vendor)} w-64`}
+                  />
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input
+                      type="email"
+                      value={v.toEmail}
+                      onChange={(e) => setField(s.id, "toEmail", e.target.value)}
+                      placeholder="To email"
+                      className={`${fieldInputClass(v.toEmail !== sv.toEmail)} w-48`}
+                    />
+                    <input
+                      type="email"
+                      value={v.ccEmail}
+                      onChange={(e) => setField(s.id, "ccEmail", e.target.value)}
+                      placeholder="CC email (optional)"
+                      className={`${fieldInputClass(v.ccEmail !== sv.ccEmail)} w-48`}
+                    />
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       </div>
