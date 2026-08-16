@@ -101,7 +101,7 @@ function AddStoreForm() {
       <button
         type="submit"
         disabled={saving || !name.trim()}
-        className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 disabled:opacity-50"
+        className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 disabled:opacity-50 transition-colors duration-150 active:scale-95"
       >
         {saving ? "Adding…" : "Add store"}
       </button>
@@ -111,7 +111,7 @@ function AddStoreForm() {
 }
 
 function fieldInputClass(dirty: boolean) {
-  return `rounded-md border px-2 py-1 text-sm dark:bg-slate-800 dark:text-white ${
+  return `rounded-md border px-2 py-1 text-sm dark:bg-slate-800 dark:text-white transition-colors duration-150 ${
     dirty
       ? "border-amber-400 dark:border-amber-500 ring-1 ring-amber-200 dark:ring-amber-900"
       : "border-slate-300 dark:border-slate-700"
@@ -222,7 +222,7 @@ export default function StoreMaster({ stores, aliases }: { stores: Store[]; alia
           type="button"
           onClick={saveAll}
           disabled={saving || !dirty}
-          className={`rounded-md text-white text-sm font-medium px-4 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed ${
+          className={`rounded-md text-white text-sm font-medium px-4 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 active:scale-95 ${
             dirty ? "bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500" : "bg-slate-300 dark:bg-slate-700"
           }`}
         >

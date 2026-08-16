@@ -19,7 +19,7 @@ export default function NavLinks({ links }: { links: NavLink[] }) {
           <Link
             key={l.href}
             href={l.href}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors ${
+            className={`rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-all duration-150 active:scale-95 ${
               active ? "bg-blue-600 text-white" : "text-slate-300 hover:bg-slate-800 hover:text-white"
             }`}
           >

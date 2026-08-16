@@ -70,7 +70,7 @@ export default function SyncNowButton() {
           type="button"
           onClick={run}
           disabled={loading}
-          className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 disabled:opacity-50"
+          className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 disabled:opacity-50 transition-colors duration-150 active:scale-95"
         >
           {loading ? "Syncing…" : "Sync now"}
         </button>
@@ -79,7 +79,7 @@ export default function SyncNowButton() {
             type="button"
             onClick={cancel}
             disabled={cancelling}
-            className="rounded-md border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 text-sm font-medium px-3 py-2 disabled:opacity-50"
+            className="rounded-md border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 text-sm font-medium px-3 py-2 disabled:opacity-50 transition-colors duration-150 hover:bg-red-50 dark:hover:bg-red-950 active:scale-95"
           >
             {cancelling ? "Stopping…" : "Stop"}
           </button>

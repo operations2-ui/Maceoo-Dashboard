@@ -81,8 +81,8 @@ export default function StatTile({
     </>
   );
 
-  const className = `chart-surface block rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 h-full${
-    href ? " hover:border-slate-400 dark:hover:border-slate-600 transition-colors" : ""
+  const className = `chart-surface block rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 h-full transition-all duration-200${
+    href ? " hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-md hover:-translate-y-0.5" : ""
   }`;
 
   if (href) {

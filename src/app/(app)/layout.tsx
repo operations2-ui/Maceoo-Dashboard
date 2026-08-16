@@ -1,6 +1,7 @@
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { pool } from "@/lib/db";
 import NavBar from "@/components/NavBar";
+import PageTransition from "@/components/PageTransition";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
@@ -16,7 +17,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex flex-col min-h-screen" suppressHydrationWarning>
       <NavBar isAdmin={user?.role === "admin"} displayName={displayName} />
-      <main className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">{children}</main>
+      <main className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <PageTransition>{children}</PageTransition>
+      </main>
     </div>
   );
 }

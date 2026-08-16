@@ -95,7 +95,7 @@ function CreateUserForm() {
       <button
         type="submit"
         disabled={saving || !email.trim() || password.length < 6}
-        className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 disabled:opacity-50"
+        className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 disabled:opacity-50 transition-colors duration-150 active:scale-95"
       >
         {saving ? "Creating…" : "Create user"}
       </button>
@@ -197,7 +197,7 @@ function EditUserCell({ userId, initialEmail, initialFullName }: { userId: strin
           type="button"
           onClick={save}
           disabled={saving || !dirty}
-          className={`rounded-md text-white text-xs font-medium px-2.5 py-1 disabled:opacity-40 disabled:cursor-not-allowed ${
+          className={`rounded-md text-white text-xs font-medium px-2.5 py-1 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 active:scale-95 ${
             dirty ? "bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500" : "bg-slate-400 dark:bg-slate-700"
           }`}
         >
