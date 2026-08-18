@@ -1,22 +1,18 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth/require-admin";
-import { runSync, SyncCancelledError, closeStaleSyncRuns } from "@/lib/sync";
+import { runInventorySync, SyncCancelledError, closeStaleSyncRuns } from "@/lib/sync";
 
-// Since the sales sheet moved to one row per line item, a full current-year
-// sync (sales + inventory + retail audit) measured at ~300-400s in testing
-// and grows through the year as more of it fills in — well past Vercel's 10s
-// default. 300 is the hard ceiling on the Hobby plan (a higher value fails
-// the build outright), so this is already at risk of not finishing in time
-// as the year's data grows; upgrading to Pro (up to 800s, or more with Fluid
-// Compute) would raise this ceiling if the route starts timing out.
+// Inventory's own budget, independent of sales/retail audit — see the note
+// in src/lib/sync.ts on why the three phases were split into separate
+// invocations (Vercel Hobby's 300s ceiling).
 export const maxDuration = 300;
 
 /**
  * Streams newline-delimited JSON progress events while the sync runs, ending
  * with a `{"type":"done",...}` line — so the admin UI can show what's
- * currently happening instead of a blank "Syncing…" for up to a minute, and
- * can cancel via POST /api/admin/sync/cancel using the emitted runId.
+ * currently happening, and can cancel via POST /api/admin/sync/cancel using
+ * the emitted runId.
  */
 export async function POST() {
   const auth = await requireAdmin();
@@ -30,7 +26,9 @@ export async function POST() {
       };
 
       await closeStaleSyncRuns();
-      const { rows } = await pool.query("insert into sync_runs (status) values ('running') returning id");
+      const { rows } = await pool.query(
+        "insert into sync_runs (status, sync_type) values ('running', 'inventory') returning id",
+      );
       const runId = rows[0].id;
       send({ type: "started", runId });
 
@@ -39,10 +37,6 @@ export async function POST() {
         return flagRows[0]?.cancel_requested === true;
       };
 
-      // Persist each progress message so it's visible from the Recent Runs
-      // table too, not just to whichever client happened to start this run.
-      // Chained (not awaited inline) so writes stay in order without making
-      // onProgress itself async, and so a slow write never stalls the sync.
       let progressWrites = Promise.resolve();
       const onProgress = (message: string) => {
         send({ type: "progress", message });
@@ -55,11 +49,9 @@ export async function POST() {
       };
 
       try {
-        const summary = await runSync(onProgress, checkCancelled);
+        const summary = await runInventorySync(onProgress, checkCancelled);
         await progressWrites;
         const status = summary.errors.length > 0 ? "error" : "success";
-        // A cancellation may have raced in between the last checkpoint and
-        // here; don't let a late success overwrite it.
         await pool.query(
           "update sync_runs set finished_at = now(), status = $1, summary = $2, current_step = null where id = $3 and status <> 'cancelled'",
           [status, JSON.stringify(summary), runId],

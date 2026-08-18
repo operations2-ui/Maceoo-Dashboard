@@ -9,7 +9,7 @@ export const maxDuration = 60;
 
 /**
  * Weekly Prior-Day Oversell email, triggered by Vercel Cron (see vercel.json,
- * Tuesdays). Same shared-secret auth as /api/cron/sync — no user session at
+ * Tuesdays). Same shared-secret auth as the /api/cron/sync-* routes — no user session at
  * cron time. Stores without a to_email set are skipped, as are stores with
  * zero flagged items for the date (no "all clear" noise).
  */

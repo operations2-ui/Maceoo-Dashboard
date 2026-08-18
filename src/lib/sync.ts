@@ -879,10 +879,22 @@ export async function runFullSalesBackfill(
   return syncSalesFromSheet(sheetId, ranges, stores, aliases, null, onProgress);
 }
 
-export async function runSync(
+export type InventorySyncResult = Pick<
+  SyncSummary,
+  "inventory" | "inventoryUnmatchedFolders" | "inventoryErrors" | "inventoryStoppedEarly" | "inventoryPruned"
+> & { errors: string[] };
+
+/**
+ * Inventory phase only — split out from the old combined runSync() so each
+ * phase gets its own maxDuration budget instead of all three sharing one
+ * (the combined route was hitting Vercel's function-duration ceiling as the
+ * sales sheet grew). Safe to call on its own schedule/button independent of
+ * the other two phases.
+ */
+export async function runInventorySync(
   onProgress: SyncProgress = noopProgress,
   checkCancelled: CancelCheck = noopCancelCheck,
-): Promise<SyncSummary> {
+): Promise<InventorySyncResult> {
   const errors: string[] = [];
   onProgress("Loading stores");
   const { stores, aliases } = await getStoresAndAliases();
@@ -944,13 +956,28 @@ export async function runSync(
     errors.push(`Inventory pruning failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  onProgress("Finishing up");
+  return { ...inventoryResult, inventoryPruned, errors };
+}
+
+export type SalesSyncResult = Pick<SyncSummary, "sales" | "discounts"> & { errors: string[] };
+
+/**
+ * Sales/discounts phase only (current calendar year, scoped delete-and-
+ * reload) — the heaviest of the three phases now that the sheet is
+ * line-item grain, and the one most likely to need its own full budget.
+ */
+export async function runSalesSync(onProgress: SyncProgress = noopProgress): Promise<SalesSyncResult> {
+  const errors: string[] = [];
+  onProgress("Loading stores");
+  const { stores, aliases } = await getStoresAndAliases();
+
   // Discounts now come from the Sales sheet itself (each row is a per-user,
   // per-discount-combo slice of a day's orders), so one fetch covers both —
   // no separate Discounts sheet needed. Daily runs only touch the current
   // calendar year (deleteFromDate = Jan 1) — prior years are loaded once via
   // the standalone full-history backfill and never re-touched by this job,
   // since closed years don't get corrected.
-  await throwIfCancelled(checkCancelled);
   let sales: SyncSummary["sales"] = null;
   let discounts: SyncSummary["discounts"] = null;
   const salesSheetId = process.env.SALES_SHEET_ID;
@@ -974,7 +1001,15 @@ export async function runSync(
     errors.push("SALES_SHEET_ID is not set; skipped sales/discounts sync");
   }
 
-  await throwIfCancelled(checkCancelled);
+  onProgress("Finishing up");
+  return { sales, discounts, errors };
+}
+
+export type RetailAuditSyncResult = Pick<SyncSummary, "retailAudit"> & { errors: string[] };
+
+/** Retail Audit phase only (PO / Retail Audit sheet, full overwrite). */
+export async function runRetailAuditSync(onProgress: SyncProgress = noopProgress): Promise<RetailAuditSyncResult> {
+  const errors: string[] = [];
   let retailAudit: SyncSummary["retailAudit"] = null;
   const poSheetId = process.env.PO_SHEET_ID;
   if (poSheetId) {
@@ -984,7 +1019,32 @@ export async function runSync(
       errors.push(`PO/Retail Audit sync failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
-
   onProgress("Finishing up");
-  return { ...inventoryResult, inventoryPruned, discounts, sales, retailAudit, errors };
+  return { retailAudit, errors };
+}
+
+/**
+ * Convenience wrapper that runs all three phases back to back — useful for
+ * local/manual use, but no longer what any route calls: on Vercel Hobby's
+ * 300s function-duration ceiling, running all three in one invocation risks
+ * the combined time exceeding the limit as the sales sheet grows. The admin
+ * UI and the daily cron each trigger the three phases as separate
+ * invocations instead, so every phase gets its own full budget.
+ */
+export async function runSync(
+  onProgress: SyncProgress = noopProgress,
+  checkCancelled: CancelCheck = noopCancelCheck,
+): Promise<SyncSummary> {
+  const inventoryResult = await runInventorySync(onProgress, checkCancelled);
+  await throwIfCancelled(checkCancelled);
+  const salesResult = await runSalesSync(onProgress);
+  await throwIfCancelled(checkCancelled);
+  const retailAuditResult = await runRetailAuditSync(onProgress);
+
+  return {
+    ...inventoryResult,
+    ...salesResult,
+    ...retailAuditResult,
+    errors: [...inventoryResult.errors, ...salesResult.errors, ...retailAuditResult.errors],
+  };
 }

@@ -3,7 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export default function SyncNowButton() {
+interface SyncNowButtonProps {
+  /** Which phase route to hit — each phase runs as its own invocation with its own time budget. */
+  phase: "inventory" | "sales" | "retail-audit";
+  label: string;
+}
+
+export default function SyncNowButton({ phase, label }: SyncNowButtonProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
@@ -18,7 +24,7 @@ export default function SyncNowButton() {
     setRunId(null);
     setCancelling(false);
 
-    const res = await fetch("/api/admin/sync", { method: "POST" });
+    const res = await fetch(`/api/admin/sync/${phase}`, { method: "POST" });
     const reader = res.body?.getReader();
     if (!reader) {
       setResult(await res.json());
@@ -64,7 +70,7 @@ export default function SyncNowButton() {
   }
 
   return (
-    <div className="mb-6">
+    <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -72,7 +78,7 @@ export default function SyncNowButton() {
           disabled={loading}
           className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 disabled:opacity-50 transition-colors duration-150 active:scale-95"
         >
-          {loading ? "Syncing…" : "Sync now"}
+          {loading ? "Syncing…" : label}
         </button>
         {loading && runId != null && (
           <button

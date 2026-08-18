@@ -1,20 +1,18 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { runSync, closeStaleSyncRuns } from "@/lib/sync";
+import { runSalesSync, closeStaleSyncRuns } from "@/lib/sync";
 
-// Since the sales sheet moved to one row per line item, a full current-year
-// sync (sales + inventory + retail audit) measured at ~300-400s in testing
-// and grows through the year as more of it fills in — well past Vercel's 10s
-// default. 300 is the hard ceiling on the Hobby plan (a higher value fails
-// the build outright), so this is already at risk of not finishing in time
-// as the year's data grows; upgrading to Pro (up to 800s, or more with Fluid
-// Compute) would raise this ceiling if the route starts timing out.
+// Own budget, independent of inventory/retail audit — see the note in
+// src/lib/sync.ts on why the three phases run as separate cron-triggered
+// invocations instead of one combined call (Vercel Hobby's 300s ceiling).
+// This is the heaviest phase now that the sheet is line-item grain.
 export const maxDuration = 300;
 
 /**
- * Sync endpoint for Vercel Cron (see vercel.json). Not gated by a user
- * session — Cron has none — but requires a shared secret instead, since this
- * is a real write endpoint and must not be publicly callable.
+ * Sales/discounts-only sync endpoint for Vercel Cron (see vercel.json). Not
+ * gated by a user session — Cron has none — but requires a shared secret
+ * instead, since this is a real write endpoint and must not be publicly
+ * callable.
  */
 export async function GET(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
@@ -28,11 +26,11 @@ export async function GET(request: Request) {
   }
 
   await closeStaleSyncRuns();
-  const { rows } = await pool.query("insert into sync_runs (status) values ('running') returning id");
+  const { rows } = await pool.query(
+    "insert into sync_runs (status, sync_type) values ('running', 'sales') returning id",
+  );
   const runId = rows[0].id;
 
-  // Same current_step tracking the manual sync uses, so /admin/sync shows
-  // live progress for a cron-triggered run too, not just manual ones.
   let progressWrites = Promise.resolve();
   const onProgress = (message: string) => {
     progressWrites = progressWrites.then(() =>
@@ -44,7 +42,7 @@ export async function GET(request: Request) {
   };
 
   try {
-    const summary = await runSync(onProgress);
+    const summary = await runSalesSync(onProgress);
     await progressWrites;
     const status = summary.errors.length > 0 ? "error" : "success";
     await pool.query(

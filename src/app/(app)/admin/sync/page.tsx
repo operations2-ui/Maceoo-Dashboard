@@ -13,7 +13,7 @@ export default async function SyncPage() {
   const { rows } = await pool.query(
     `select id, to_char(started_at, 'YYYY-MM-DD HH24:MI:SS') as started_at,
             to_char(finished_at, 'YYYY-MM-DD HH24:MI:SS') as finished_at,
-            status, summary, error_message, current_step
+            status, sync_type, summary, error_message, current_step
      from sync_runs
      order by started_at desc
      limit 20`,
@@ -28,9 +28,14 @@ export default async function SyncPage() {
         service account. The Sales sheet also carries discount usage, so a separate Discounts sheet isn&apos;t
         needed. Inventory folders are discovered automatically from whatever&apos;s shared with the service
         account (or under <code>DRIVE_ROOT_FOLDER_ID</code> if set); requires <code>SALES_SHEET_ID</code> to be
-        set. Only the last 30 days of inventory are kept.
+        set. Only the last 30 days of inventory are kept. The three phases run as separate syncs, each with its
+        own time budget — trigger them one after another rather than all at once.
       </p>
-      <SyncNowButton />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+        <SyncNowButton phase="inventory" label="Sync Inventory" />
+        <SyncNowButton phase="sales" label="Sync Sales" />
+        <SyncNowButton phase="retail-audit" label="Sync Retail Audit" />
+      </div>
       <LiveRunsRefresher active={hasRunning} />
       <h2 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Recent runs</h2>
       <DataTable
@@ -39,6 +44,12 @@ export default async function SyncPage() {
         columns={[
           { key: "started_at", header: "Started" },
           { key: "finished_at", header: "Finished" },
+          {
+            key: "sync_type",
+            header: "Type",
+            render: (r) =>
+              r.sync_type === "retail_audit" ? "Retail Audit" : r.sync_type[0].toUpperCase() + r.sync_type.slice(1),
+          },
           { key: "status", header: "Status" },
           {
             key: "current_step",

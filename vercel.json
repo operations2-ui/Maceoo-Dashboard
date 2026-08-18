@@ -1,8 +1,16 @@
 {
   "crons": [
     {
-      "path": "/api/cron/sync",
+      "path": "/api/cron/sync-inventory",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/sync-sales",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/sync-retail-audit",
+      "schedule": "0 11 * * *"
     },
     {
       "path": "/api/cron/oversell-emails",
