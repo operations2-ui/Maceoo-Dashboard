@@ -36,7 +36,10 @@ const statusBadge: Record<string, string> = {
 
 export default function BuyPlanItemTable({ rows, storeId }: { rows: BuyPlanItemRow[]; storeId: string }) {
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("attention");
+  // Now reached by drilling down to one style, so rows are naturally few —
+  // default to showing all sizes rather than hiding "ok" ones as before,
+  // when this table listed every item in the store flat.
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sort, setSort] = useState<{ key: keyof BuyPlanItemRow; dir: "asc" | "desc" }>({
     key: "all_time",
     dir: "desc",

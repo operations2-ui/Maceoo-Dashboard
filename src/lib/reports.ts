@@ -431,6 +431,138 @@ export async function getBuyPlanStoreSummary(storeIds: string[]): Promise<BuyPla
   return rows;
 }
 
+export interface BuyPlanGroupRow {
+  [key: string]: unknown;
+  group_key: string;
+  label: string;
+  wtd: number;
+  last_7d: number;
+  mtd: number;
+  last_3mo: number;
+  ytd: number;
+  all_time: number;
+  on_hand: number;
+  insufficient_count: number;
+  idle_count: number;
+}
+
+/**
+ * Category-level Buy Plan for one store — the top of the Category -> Style
+ * -> Size drill-down. Same full-outer-join-then-flag shape as
+ * getBuyPlanStoreSummary, just grouped by product_category within one store
+ * instead of by store. A variant that's never sold at this store (so it
+ * only appears on the inventory side) has no category on record — those
+ * land in "(Uncategorized)" rather than being silently dropped.
+ */
+export async function getBuyPlanCategories(storeId: string): Promise<BuyPlanGroupRow[]> {
+  const { rows } = await pool.query(
+    `with known_skus as (
+       select distinct sku from inventory_snapshots
+     ),
+     sold as (
+       select l.variant_sku,
+         (array_agg(l.product_category) filter (where l.product_category <> ''))[1] as product_category,
+         ${BUY_PLAN_WINDOW_SUMS}
+       from sales_order_lines l
+       join known_skus k on k.sku = l.variant_sku
+       where l.store_id = $1 and l.product_type <> 'Services'
+       group by l.variant_sku
+     ),
+     latest_date as (
+       select max(snapshot_date) as d from inventory_snapshots where store_id = $1
+     ),
+     inv as (
+       select i.sku as variant_sku, i.on_hand
+       from inventory_snapshots i, latest_date
+       where i.store_id = $1 and i.snapshot_date = latest_date.d
+     ),
+     joined as (
+       select
+         coalesce(sold.product_category, '') as product_category,
+         coalesce(sold.wtd, 0) as wtd, coalesce(sold.last_7d, 0) as last_7d, coalesce(sold.mtd, 0) as mtd,
+         coalesce(sold.last_3mo, 0) as last_3mo, coalesce(sold.ytd, 0) as ytd, coalesce(sold.all_time, 0) as all_time,
+         coalesce(inv.on_hand, 0) as on_hand,
+         coalesce(sold.last_30d, 0) as last_30d, coalesce(sold.last_90d, 0) as last_90d
+       from sold
+       full outer join inv on inv.variant_sku = sold.variant_sku
+     )
+     select
+       coalesce(nullif(product_category, ''), '(Uncategorized)') as group_key,
+       coalesce(nullif(product_category, ''), '(Uncategorized)') as label,
+       sum(wtd)::int as wtd, sum(last_7d)::int as last_7d, sum(mtd)::int as mtd,
+       sum(last_3mo)::int as last_3mo, sum(ytd)::int as ytd, sum(all_time)::int as all_time,
+       sum(on_hand)::int as on_hand,
+       count(*) filter (
+         where last_30d > 0 and (on_hand = 0 or on_hand::numeric / (last_30d::numeric / 30.0) < 14)
+       )::int as insufficient_count,
+       count(*) filter (where on_hand > 0 and last_90d = 0)::int as idle_count
+     from joined
+     group by 1
+     order by sum(all_time) desc`,
+    [storeId],
+  );
+  return rows;
+}
+
+/**
+ * Style-level Buy Plan for one store within one product category — the
+ * middle of the Category -> Style -> Size drill-down. Same shape as
+ * getBuyPlanCategories, grouped by core_sku instead. `category` is the raw
+ * product_category value, or "" for the "(Uncategorized)" bucket.
+ */
+export async function getBuyPlanStyles(storeId: string, category: string): Promise<BuyPlanGroupRow[]> {
+  const { rows } = await pool.query(
+    `with known_skus as (
+       select distinct sku from inventory_snapshots
+     ),
+     sold as (
+       select l.variant_sku, l.core_sku,
+         (array_agg(l.product_category) filter (where l.product_category <> ''))[1] as product_category,
+         ${BUY_PLAN_WINDOW_SUMS}
+       from sales_order_lines l
+       join known_skus k on k.sku = l.variant_sku
+       where l.store_id = $1 and l.product_type <> 'Services'
+       group by l.variant_sku, l.core_sku
+     ),
+     latest_date as (
+       select max(snapshot_date) as d from inventory_snapshots where store_id = $1
+     ),
+     inv as (
+       select i.sku as variant_sku, i.style_code as core_sku, i.description, i.on_hand
+       from inventory_snapshots i, latest_date
+       where i.store_id = $1 and i.snapshot_date = latest_date.d
+     ),
+     joined as (
+       select
+         coalesce(sold.core_sku, inv.core_sku) as core_sku,
+         inv.description,
+         coalesce(sold.product_category, '') as product_category,
+         coalesce(sold.wtd, 0) as wtd, coalesce(sold.last_7d, 0) as last_7d, coalesce(sold.mtd, 0) as mtd,
+         coalesce(sold.last_3mo, 0) as last_3mo, coalesce(sold.ytd, 0) as ytd, coalesce(sold.all_time, 0) as all_time,
+         coalesce(inv.on_hand, 0) as on_hand,
+         coalesce(sold.last_30d, 0) as last_30d, coalesce(sold.last_90d, 0) as last_90d
+       from sold
+       full outer join inv on inv.variant_sku = sold.variant_sku
+       where coalesce(sold.product_category, '') = $2
+     )
+     select
+       core_sku as group_key,
+       core_sku || coalesce(' — ' || (array_agg(description) filter (where description is not null))[1], '') as label,
+       sum(wtd)::int as wtd, sum(last_7d)::int as last_7d, sum(mtd)::int as mtd,
+       sum(last_3mo)::int as last_3mo, sum(ytd)::int as ytd, sum(all_time)::int as all_time,
+       sum(on_hand)::int as on_hand,
+       count(*) filter (
+         where last_30d > 0 and (on_hand = 0 or on_hand::numeric / (last_30d::numeric / 30.0) < 14)
+       )::int as insufficient_count,
+       count(*) filter (where on_hand > 0 and last_90d = 0)::int as idle_count
+     from joined
+     group by core_sku
+     order by sum(all_time) desc`,
+    [storeId, category],
+  );
+  return rows;
+}
+
 export interface BuyPlanItemRow {
   [key: string]: unknown;
   variant_sku: string;
@@ -461,8 +593,10 @@ export interface BuyPlanItemRow {
  * but not selling" items in one pass. Business rules (user-confirmed):
  * insufficient = selling in the last 30 days with under 14 days of supply
  * (or none left at all); idle = in stock with zero sales in the last 90 days.
+ * `coreSku`, when given, scopes this to one style — the bottom of the
+ * Category -> Style -> Size drill-down.
  */
-export async function getBuyPlanItems(storeId: string): Promise<BuyPlanItemRow[]> {
+export async function getBuyPlanItems(storeId: string, coreSku?: string): Promise<BuyPlanItemRow[]> {
   const { rows } = await pool.query(
     `with known_skus as (
        select distinct sku from inventory_snapshots
@@ -475,6 +609,7 @@ export async function getBuyPlanItems(storeId: string): Promise<BuyPlanItemRow[]
        from sales_order_lines l
        join known_skus k on k.sku = l.variant_sku
        where l.store_id = $1 and l.product_type <> 'Services'
+         and ($2::text is null or l.core_sku = $2)
        group by l.variant_sku, l.core_sku
      ),
      latest_date as (
@@ -484,6 +619,7 @@ export async function getBuyPlanItems(storeId: string): Promise<BuyPlanItemRow[]
        select i.sku as variant_sku, i.style_code as core_sku, i.description, i.size_code, i.vendor, i.on_hand
        from inventory_snapshots i, latest_date
        where i.store_id = $1 and i.snapshot_date = latest_date.d
+         and ($2::text is null or i.style_code = $2)
      )
      select
        coalesce(sold.variant_sku, inv.variant_sku) as variant_sku,
@@ -508,7 +644,7 @@ export async function getBuyPlanItems(storeId: string): Promise<BuyPlanItemRow[]
      from sold
      full outer join inv on inv.variant_sku = sold.variant_sku
      order by all_time desc nulls last`,
-    [storeId],
+    [storeId, coreSku ?? null],
   );
   return rows;
 }
