@@ -3,11 +3,13 @@ import { pool } from "@/lib/db";
 import { runSync, closeStaleSyncRuns } from "@/lib/sync";
 
 // Since the sales sheet moved to one row per line item, a full current-year
-// sync (sales + inventory + retail audit) measured at ~300s and grows through
-// the year as more of it fills in — well past Vercel's 10s default. Set high
-// with headroom; requires a plan/config that allows functions to run this
-// long (e.g. Fluid Compute on Pro).
-export const maxDuration = 800;
+// sync (sales + inventory + retail audit) measured at ~300-400s in testing
+// and grows through the year as more of it fills in — well past Vercel's 10s
+// default. 300 is the hard ceiling on the Hobby plan (a higher value fails
+// the build outright), so this is already at risk of not finishing in time
+// as the year's data grows; upgrading to Pro (up to 800s, or more with Fluid
+// Compute) would raise this ceiling if the route starts timing out.
+export const maxDuration = 300;
 
 /**
  * Sync endpoint for Vercel Cron (see vercel.json). Not gated by a user
