@@ -413,6 +413,7 @@ async function syncInventoryFromLocalFolder(
 interface DailyTotal {
   storeId: string;
   date: string;
+  totalQuantity: number;
   totalOrders: number;
   grossSales: number;
   discounts: number;
@@ -512,6 +513,7 @@ async function syncSalesFromSheet(
       day = {
         storeId,
         date: r.orderDate,
+        totalQuantity: 0,
         totalOrders: 0,
         grossSales: 0,
         discounts: 0,
@@ -525,6 +527,7 @@ async function syncSalesFromSheet(
       };
       dailyTotals.set(key, day);
     }
+    day.totalQuantity += r.quantity ?? 0;
     day.totalOrders += r.totalOrders ?? 0;
     day.grossSales += r.grossSales ?? 0;
     day.discounts += r.discounts ?? 0;
@@ -546,6 +549,7 @@ async function syncSalesFromSheet(
         storeId,
         date: r.orderDate,
         userName: r.userName,
+        totalQuantity: 0,
         totalOrders: 0,
         grossSales: 0,
         discounts: 0,
@@ -559,6 +563,7 @@ async function syncSalesFromSheet(
       };
       userTotals.set(userKey, userDay);
     }
+    userDay.totalQuantity += r.quantity ?? 0;
     userDay.totalOrders += r.totalOrders ?? 0;
     userDay.grossSales += r.grossSales ?? 0;
     userDay.discounts += r.discounts ?? 0;
@@ -612,6 +617,7 @@ async function syncSalesFromSheet(
           date: r.orderDate,
           userName: r.userName,
           discountName: r.discountNames,
+          totalQuantity: 0,
           totalOrders: 0,
           grossSales: 0,
           discounts: 0,
@@ -630,6 +636,7 @@ async function syncSalesFromSheet(
         ord.userName = r.userName;
         ord.discountName = r.discountNames;
       }
+      ord.totalQuantity += r.quantity ?? 0;
       ord.totalOrders += r.totalOrders ?? 0;
       ord.grossSales += r.grossSales ?? 0;
       ord.discounts += r.discounts ?? 0;
@@ -647,25 +654,25 @@ async function syncSalesFromSheet(
         storeId, r.orderName, r.orderDate, r.userName, r.discountNames,
         r.productCategory, r.productType, r.coreSku, r.variantSku,
         r.customerType, r.customerTags, r.customerFullName, r.customerTotalNetSpent,
-        r.totalOrders, r.grossSales, r.discounts, r.refunds, r.netSales,
+        r.quantity, r.totalOrders, r.grossSales, r.discounts, r.refunds, r.netSales,
         r.taxes, r.shipping, r.totalSales, r.cogs, r.grossMargin,
       ]);
     }
   }
 
   const salesRows = [...dailyTotals.values()].map((d) => [
-    d.storeId, d.date, d.totalOrders, d.grossSales, d.discounts, d.refunds,
+    d.storeId, d.date, d.totalQuantity, d.totalOrders, d.grossSales, d.discounts, d.refunds,
     d.netSales, d.taxes, d.shipping, d.totalSales, d.cogs, d.grossMargin,
   ]);
   const userSalesRows = [...userTotals.values()].map((d) => [
-    d.storeId, d.date, d.userName, d.totalOrders, d.grossSales, d.discounts, d.refunds,
+    d.storeId, d.date, d.userName, d.totalQuantity, d.totalOrders, d.grossSales, d.discounts, d.refunds,
     d.netSales, d.taxes, d.shipping, d.totalSales, d.cogs, d.grossMargin,
   ]);
   const discountRows = [...discountTotals.values()].map((d) => [
     d.storeId, d.date, d.userName, d.discountName, d.totalDiscounts, d.totalOrders,
   ]);
   const orderRows = [...orderTotals.values()].map((o) => [
-    o.storeId, o.orderName, o.date, o.userName, o.discountName, o.totalOrders,
+    o.storeId, o.orderName, o.date, o.userName, o.discountName, o.totalQuantity, o.totalOrders,
     o.grossSales, o.discounts, o.refunds, o.netSales, o.taxes, o.shipping,
     o.totalSales, o.cogs, o.grossMargin,
   ]);
@@ -689,13 +696,13 @@ async function syncSalesFromSheet(
     await client.query("set local statement_timeout = '600000'");
     await deleteAndLoadTable(
       client, "sales_daily", "order_date", deleteFromDate,
-      ["store_id", "order_date", "total_orders", "gross_sales", "discounts", "refunds",
+      ["store_id", "order_date", "total_quantity", "total_orders", "gross_sales", "discounts", "refunds",
        "net_sales", "taxes", "shipping", "total_sales", "cogs", "gross_margin"],
       salesRows,
     );
     await deleteAndLoadTable(
       client, "sales_by_user", "day_date", deleteFromDate,
-      ["store_id", "day_date", "user_name", "total_orders", "gross_sales", "discounts", "refunds",
+      ["store_id", "day_date", "user_name", "total_quantity", "total_orders", "gross_sales", "discounts", "refunds",
        "net_sales", "taxes", "shipping", "total_sales", "cogs", "gross_margin"],
       userSalesRows,
     );
@@ -714,7 +721,7 @@ async function syncSalesFromSheet(
     }
     await deleteAndLoadTable(
       client, "sales_orders", "day_date", deleteFromDate,
-      ["store_id", "order_name", "day_date", "user_name", "discount_name", "total_orders",
+      ["store_id", "order_name", "day_date", "user_name", "discount_name", "total_quantity", "total_orders",
        "gross_sales", "discounts", "refunds", "net_sales", "taxes", "shipping", "total_sales",
        "cogs", "gross_margin"],
       orderRows,
@@ -728,7 +735,7 @@ async function syncSalesFromSheet(
       client, "sales_order_lines", "day_date", deleteFromDate,
       ["store_id", "order_name", "day_date", "user_name", "discount_name", "product_category",
        "product_type", "core_sku", "variant_sku", "customer_type", "customer_tags",
-       "customer_full_name", "customer_total_net_spent", "total_orders", "gross_sales",
+       "customer_full_name", "customer_total_net_spent", "quantity", "total_orders", "gross_sales",
        "discounts", "refunds", "net_sales", "taxes", "shipping", "total_sales", "cogs", "gross_margin"],
       orderLineRows,
     );
@@ -952,7 +959,7 @@ export async function runSync(
       const yearStart = `${new Date().getFullYear()}-01-01`;
       const result = await syncSalesFromSheet(
         salesSheetId,
-        [process.env.SALES_SHEET_RANGE || "'Year to Date Sales in Google sheets'!A:W"],
+        [process.env.SALES_SHEET_RANGE || "'Year to Date Sales in Google sheets'!A:X"],
         stores,
         aliases,
         yearStart,

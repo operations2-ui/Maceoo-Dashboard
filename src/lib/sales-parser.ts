@@ -18,6 +18,8 @@ export interface SalesRow {
   customerTags: string;
   customerFullName: string;
   customerTotalNetSpent: number | null;
+  /** Units sold on this line; negative on a refund line (confirmed in live data). */
+  quantity: number | null;
   totalOrders: number | null;
   grossSales: number | null;
   discounts: number | null;
@@ -47,8 +49,8 @@ export interface SalesRow {
  * Columns: Location Name, Order name, DAY Date, Order User name, Order
  * Discount names, Product Category, Product type, Core SKU, Variant SKU,
  * Order Customer type, Customer tags, Customer Full name, Customer Total
- * net spent, Total orders, Total gross sales, Total discounts, Total
- * refunds, Total net sales, Total taxes, Total shipping, Total sales,
+ * net spent, SUM Quantity, Total orders, Total gross sales, Total discounts,
+ * Total refunds, Total net sales, Total taxes, Total shipping, Total sales,
  * Total cost of goods sold, Total gross margin.
  */
 export function parseSalesCsv(csvText: string): SalesRow[] {
@@ -78,6 +80,7 @@ export function parseSalesCsv(csvText: string): SalesRow[] {
       customerTags: cell(row, headerIndex, "Customer tags"),
       customerFullName: cell(row, headerIndex, "Customer Full name"),
       customerTotalNetSpent: numOrNull(cell(row, headerIndex, "Customer Total net spent")),
+      quantity: intOrNull(cell(row, headerIndex, "SUM Quantity")),
       totalOrders: intOrNull(cell(row, headerIndex, "Total orders")),
       grossSales: numOrNull(cell(row, headerIndex, "Total gross sales")),
       discounts: numOrNull(cell(row, headerIndex, "Total discounts")),
