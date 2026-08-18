@@ -4,12 +4,20 @@ import { parseFlexibleDate } from "./date-utils";
 export interface SalesRow {
   locationName: string;
   orderDate: string;
-  /** Globally unique per order. Empty on old-format sheets without this column. */
+  /** Globally unique per order. Multiple rows can now share the same order name — see file doc comment. */
   orderName: string;
-  /** User the row's orders are attributed to. Empty on old-format sheets without this column. */
   userName: string;
-  /** Comma-separated discount names applied to this slice of orders, or "" if none. */
+  /** Comma-separated discount names applied to this order, or "" if none. */
   discountNames: string;
+  /** Line-item detail — varies per row, unlike the order-level fields above which repeat across every line of an order. */
+  productCategory: string;
+  productType: string;
+  coreSku: string;
+  variantSku: string;
+  customerType: string;
+  customerTags: string;
+  customerFullName: string;
+  customerTotalNetSpent: number | null;
   totalOrders: number | null;
   grossSales: number | null;
   discounts: number | null;
@@ -23,15 +31,24 @@ export interface SalesRow {
 }
 
 /**
- * Parses the day-wise sales export. As of the merged Sales+Discounts sheet,
- * each store/day is broken into one row per (user, discount-name combination)
- * slice of that day's orders, rather than a single per-day total row —
- * summing all of a day's rows reproduces the old day-level totals, and rows
- * with a non-empty discount combo double as the discount-usage detail
- * (replacing the separate Discounts sheet).
- * Columns: Location Name, Order name, DAY Order Date, Order User name,
- * Order Discount names, Total orders, Total gross sales, Total discounts,
- * Total refunds, Total net sales, Total taxes, Total shipping, Total sales,
+ * Parses the sales export. As of the latest sheet format, each order is
+ * exploded into one row per line item (a real product/SKU line, or a
+ * synthetic line like "[Tax]", "[Shipping]", "[Refund disc...", "[Tip]") —
+ * confirmed against real data that each line carries its own slice of the
+ * order's financials (not the whole order repeated), so summing every line
+ * for an order reconstructs the true order total. Location Name, Order User
+ * name, Order Discount names, and customer fields are order-level and
+ * repeat identically across all of an order's lines — including staying
+ * genuinely blank across every line for orders with no store attribution
+ * (confirmed ~26% of rows). That means, unlike the older format, this one
+ * must NOT forward-fill a blank Location Name from the previous row: doing
+ * so would incorrectly attribute an unattributed order to whatever order
+ * happened to precede it in the sheet.
+ * Columns: Location Name, Order name, DAY Date, Order User name, Order
+ * Discount names, Product Category, Product type, Core SKU, Variant SKU,
+ * Order Customer type, Customer tags, Customer Full name, Customer Total
+ * net spent, Total orders, Total gross sales, Total discounts, Total
+ * refunds, Total net sales, Total taxes, Total shipping, Total sales,
  * Total cost of goods sold, Total gross margin.
  */
 export function parseSalesCsv(csvText: string): SalesRow[] {
@@ -41,22 +58,26 @@ export function parseSalesCsv(csvText: string): SalesRow[] {
 
   const headerIndex = buildHeaderIndex(rows[headerIdx]);
   const result: SalesRow[] = [];
-  let lastLocationName = "";
 
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i];
-    const dateRaw = cell(row, headerIndex, "DAY Order Date");
+    const dateRaw = cell(row, headerIndex, "DAY Date");
     if (!dateRaw) continue;
 
-    const locationCell = cell(row, headerIndex, "Location Name");
-    if (locationCell) lastLocationName = locationCell;
-
     result.push({
-      locationName: lastLocationName,
+      locationName: cell(row, headerIndex, "Location Name"),
       orderDate: parseFlexibleDate(dateRaw),
       orderName: cell(row, headerIndex, "Order name"),
       userName: cell(row, headerIndex, "Order User name"),
       discountNames: cell(row, headerIndex, "Order Discount names"),
+      productCategory: cell(row, headerIndex, "Product Category"),
+      productType: cell(row, headerIndex, "Product type"),
+      coreSku: cell(row, headerIndex, "Core SKU"),
+      variantSku: cell(row, headerIndex, "Variant SKU"),
+      customerType: cell(row, headerIndex, "Order Customer type"),
+      customerTags: cell(row, headerIndex, "Customer tags"),
+      customerFullName: cell(row, headerIndex, "Customer Full name"),
+      customerTotalNetSpent: numOrNull(cell(row, headerIndex, "Customer Total net spent")),
       totalOrders: intOrNull(cell(row, headerIndex, "Total orders")),
       grossSales: numOrNull(cell(row, headerIndex, "Total gross sales")),
       discounts: numOrNull(cell(row, headerIndex, "Total discounts")),

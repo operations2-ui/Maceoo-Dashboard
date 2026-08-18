@@ -31,7 +31,10 @@ function getPool(): Pool {
       // Postgres statement_timeout covers time spent waiting on a lock, not
       // just execution — without it, one stuck/aborted sync leaving a lock
       // held can silently hang every later query that touches the same rows.
-      statement_timeout: 30_000,
+      // Overridable via env for one-off scripts (e.g. a multi-year backfill)
+      // that legitimately need a single COPY to run longer than the app's
+      // normal 30s budget.
+      statement_timeout: Number(process.env.PG_STATEMENT_TIMEOUT_MS) || 30_000,
       // node-postgres has NO default timeout for establishing a brand-new
       // connection — if the TCP handshake to RDS stalls (flaky network path,
       // as this instance has had before), pool.connect() hangs forever with

@@ -3,9 +3,12 @@ import { pool } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { runSync, SyncCancelledError, closeStaleSyncRuns } from "@/lib/sync";
 
-// Google Sheets fetch + batched DB writes to a remote host can take longer
-// than Vercel's 10s default function timeout; extend it explicitly.
-export const maxDuration = 60;
+// Since the sales sheet moved to one row per line item, a full current-year
+// sync (sales + inventory + retail audit) measured at ~300s and grows through
+// the year as more of it fills in — well past Vercel's 10s default. Set high
+// with headroom; requires a plan/config that allows functions to run this
+// long (e.g. Fluid Compute on Pro).
+export const maxDuration = 800;
 
 /**
  * Streams newline-delimited JSON progress events while the sync runs, ending

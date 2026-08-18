@@ -50,17 +50,6 @@ function pastDeadline(deadline: number | null): boolean {
   return deadline != null && Date.now() > deadline;
 }
 
-// The sales sheet only ever grows (every historical order stays in it), so
-// re-aggregating and re-upserting the *entire* sheet on every run gets
-// slower every day — it started fitting comfortably in 40-50s and, months
-// in, was taking 5+ minutes and getting hard-killed by Vercel mid-transaction
-// (rolling back all its work) without ever marking its sync_runs row as
-// failed — the exact "stuck on running forever" symptom. Old orders don't
-// change once the day closes, so bounding this to a rolling recent window
-// keeps runtime roughly constant regardless of how much history has piled
-// up, the same tradeoff already made for inventory's 30-day retention.
-const SALES_SYNC_WINDOW_DAYS = Number(process.env.SALES_SYNC_WINDOW_DAYS) || 45;
-
 /** Marks any sync_runs row still 'running' well past Vercel's max function
  * duration as failed. Nothing can update its own row after being hard-killed
  * mid-run, so without this, an orphaned row shows "running" forever in the
@@ -137,6 +126,30 @@ async function streamCopy(client: import("pg").PoolClient, sql: string, csvText:
     stream.on("finish", resolve);
     readable.pipe(stream);
   });
+}
+
+/**
+ * Truncates (deleteFromDate === null) or deletes rows >= deleteFromDate from
+ * `table`, then COPY-loads `rows` in. For tables that get fully replaced
+ * rather than incrementally upserted — the delete scope lets a "refresh"
+ * pass leave untouched history alone (e.g. only the current calendar year)
+ * instead of wiping everything on every run.
+ */
+async function deleteAndLoadTable(
+  client: import("pg").PoolClient,
+  table: string,
+  dateColumn: string,
+  deleteFromDate: string | null,
+  columns: string[],
+  rows: (string | number | null)[][],
+): Promise<void> {
+  if (deleteFromDate === null) {
+    await client.query(`truncate table ${table}`);
+  } else {
+    await client.query(`delete from ${table} where ${dateColumn} >= $1`, [deleteFromDate]);
+  }
+  if (rows.length === 0) return;
+  await streamCopy(client, `COPY ${table} (${columns.join(", ")}) FROM STDIN WITH (FORMAT csv)`, rowsToCsvNullable(rows));
 }
 
 /**
@@ -397,52 +410,6 @@ async function syncInventoryFromLocalFolder(
   return { inventory, inventoryUnmatchedFolders, inventoryErrors, inventoryStoppedEarly: stoppedEarly };
 }
 
-/**
- * Builds a single batched `INSERT ... VALUES (...),(...),... ON CONFLICT DO
- * UPDATE` statement for a chunk of rows. One-row-per-await was fine against
- * local Postgres but far too slow once the DB is on a remote host (RDS) â€”
- * thousands of sequential round trips can blow past a serverless function's
- * execution time limit. Batching turns that into a handful of round trips.
- */
-function buildBatchUpsertQuery(
-  table: string,
-  columns: string[],
-  conflictColumns: string[],
-  updateColumns: string[],
-  rows: unknown[][],
-): { text: string; values: unknown[] } {
-  const values: unknown[] = [];
-  const valueGroups = rows.map((row, rowIdx) => {
-    const placeholders = row.map((_, colIdx) => `$${rowIdx * columns.length + colIdx + 1}`);
-    values.push(...row);
-    return `(${placeholders.join(", ")})`;
-  });
-  const updateClause = updateColumns.map((c) => `${c} = excluded.${c}`).join(", ");
-  const text = `
-    insert into ${table} (${columns.join(", ")})
-    values ${valueGroups.join(", ")}
-    on conflict (${conflictColumns.join(", ")})
-    do update set ${updateClause}
-  `;
-  return { text, values };
-}
-
-async function batchUpsert(
-  client: import("pg").PoolClient,
-  table: string,
-  columns: string[],
-  conflictColumns: string[],
-  updateColumns: string[],
-  allRows: unknown[][],
-  batchSize = 500,
-): Promise<void> {
-  for (let i = 0; i < allRows.length; i += batchSize) {
-    const chunk = allRows.slice(i, i + batchSize);
-    const { text, values } = buildBatchUpsertQuery(table, columns, conflictColumns, updateColumns, chunk);
-    await client.query(text, values);
-  }
-}
-
 interface DailyTotal {
   storeId: string;
   date: string;
@@ -462,6 +429,12 @@ interface UserDailyTotal extends DailyTotal {
   userName: string;
 }
 
+interface OrderTotal extends DailyTotal {
+  orderName: string;
+  userName: string;
+  discountName: string;
+}
+
 interface DiscountTotal {
   storeId: string;
   date: string;
@@ -472,43 +445,58 @@ interface DiscountTotal {
 }
 
 /**
- * The Sales sheet now doubles as the Discounts source: each store/day is
- * broken into one row per (user, discount-name combination) slice of that
- * day's orders, instead of a single per-day total row. Summing every row for
- * a store+date reproduces the old day-level sales_daily totals; rows whose
- * discount-name combo is non-empty double as the discount-usage detail that
- * used to come from a separate Discounts sheet (there's no per-order id
- * anymore, so discounts are now keyed by store+day+user+discount combo).
+ * Full overwrite (delete-scoped-or-truncate, then reload), not incremental
+ * upsert — the sheet's own totals can change retroactively (a user can
+ * enter/correct an order dated earlier in the year), so an upsert that only
+ * ever adds or updates by key can't detect a row that needs to disappear or
+ * shift. `ranges` lets the caller combine multiple tabs (the current-year
+ * tab alone for the daily job; current + prior-year archive tabs for a
+ * one-time historical load). `deleteFromDate` scopes what gets wiped before
+ * reloading — null truncates every affected table outright (full backfill);
+ * a date only deletes rows from that date forward, leaving earlier history
+ * (already-closed prior years) untouched — this is what makes the daily job
+ * a "refresh the current year, don't touch prior years" operation instead of
+ * a full re-truncate every time.
+ *
+ * Each order is exploded into one row per line item (a real product/SKU
+ * line, or a synthetic line like "[Tax]"/"[Shipping]"/"[Refund disc...").
+ * Verified against real data that a multi-line order's financials are
+ * apportioned per line (not the whole order repeated on every line), so
+ * summing every line for a store+date/user+date/order reproduces the true
+ * total. Order-level fields (Location Name, Order User name, Order Discount
+ * names) repeat identically across an order's lines — including staying
+ * genuinely blank for every line of an unattributed order — so they're read
+ * directly per row with no forward-fill.
  */
 async function syncSalesFromSheet(
   sheetId: string,
-  range: string,
+  ranges: string[],
   stores: StoreRef[],
   aliases: StoreAlias[],
+  deleteFromDate: string | null,
   onProgress: SyncProgress = noopProgress,
 ): Promise<{ sales: SyncSummary["sales"]; discounts: SyncSummary["discounts"] }> {
-  onProgress("Fetching sales sheet");
+  onProgress(`Fetching sales sheet (${ranges.length} tab${ranges.length === 1 ? "" : "s"})`);
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get(
-    { spreadsheetId: sheetId, range },
-    { timeout: GOOGLE_REQUEST_TIMEOUT_MS },
-  );
-  const csv = rowsToCsv((res.data.values ?? []) as string[][]);
-  const allRows = parseSalesCsv(csv);
-
-  const windowStart = new Date(Date.now() - SALES_SYNC_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
-  const rows = allRows.filter((r) => r.orderDate >= windowStart);
-  onProgress(
-    `Syncing sales and discounts (last ${SALES_SYNC_WINDOW_DAYS} days: ${rows.length.toLocaleString("en-US")} of ${allRows.length.toLocaleString("en-US")} rows)`,
-  );
+  const rows: ReturnType<typeof parseSalesCsv> = [];
+  for (const range of ranges) {
+    const res = await sheets.spreadsheets.values.get(
+      { spreadsheetId: sheetId, range },
+      { timeout: GOOGLE_REQUEST_TIMEOUT_MS },
+    );
+    const csv = rowsToCsv((res.data.values ?? []) as string[][]);
+    rows.push(...parseSalesCsv(csv));
+  }
+  onProgress(`Aggregating ${rows.length.toLocaleString("en-US")} line-item rows`);
 
   const unmatched = new Set<string>();
   const dailyTotals = new Map<string, DailyTotal>();
   const userTotals = new Map<string, UserDailyTotal>();
   const discountTotals = new Map<string, DiscountTotal>();
-  const orderUpsertRows: unknown[][] = [];
+  const orderTotals = new Map<string, OrderTotal>();
+  const orderLineRows: (string | number | null)[][] = [];
   let matchedRowCount = 0;
-  let discountedRowCount = 0;
+  let discountedLineCount = 0;
 
   for (const r of rows) {
     const storeId = resolveStoreId(r.locationName, stores, aliases, "sheet");
@@ -517,31 +505,6 @@ async function syncSalesFromSheet(
       continue;
     }
     matchedRowCount++;
-
-    // True per-order detail, kept separately from the aggregated tables
-    // below — the Discounts Analysis reports need to see individual orders
-    // (e.g. "which orders had >15% discount"), which the aggregates can't
-    // answer once summed together. Order name is confirmed globally unique
-    // in the sheet; skip rows without one (older sheet exports).
-    if (r.orderName) {
-      orderUpsertRows.push([
-        storeId,
-        r.orderName,
-        r.orderDate,
-        r.userName,
-        r.discountNames,
-        r.totalOrders,
-        r.grossSales,
-        r.discounts,
-        r.refunds,
-        r.netSales,
-        r.taxes,
-        r.shipping,
-        r.totalSales,
-        r.cogs,
-        r.grossMargin,
-      ]);
-    }
 
     const key = `${storeId}|${r.orderDate}`;
     let day = dailyTotals.get(key);
@@ -608,13 +571,10 @@ async function syncSalesFromSheet(
     userDay.grossMargin += r.grossMargin ?? 0;
 
     if (r.discountNames) {
-      // The sheet is per-order (has its own "Order name" column, unused
-      // here), so the same store+date+user+discount-combo key can repeat
-      // across multiple orders in a day — sum them rather than pushing one
-      // row per order, or a batched multi-row upsert throws "ON CONFLICT DO
-      // UPDATE command cannot affect row a second time" the moment two rows
-      // in the same batch share a key.
-      discountedRowCount++;
+      // Store+date+user+discount-combo key can repeat across multiple lines
+      // (or multiple orders) in a day — sum them rather than pushing one row
+      // per line.
+      discountedLineCount++;
       const discountKey = `${storeId}|${r.orderDate}|${r.userName}|${r.discountNames}`;
       let discountTotal = discountTotals.get(discountKey);
       if (!discountTotal) {
@@ -631,104 +591,122 @@ async function syncSalesFromSheet(
       discountTotal.totalDiscounts += r.discounts ?? 0;
       discountTotal.totalOrders += r.totalOrders ?? 0;
     }
+
+    if (r.orderName) {
+      // Order-level aggregate (sum across every line sharing this order
+      // name) for sales_orders — a raw per-line upsert keyed on order_name
+      // would just overwrite itself down to the last line's partial amounts
+      // now that an order can span several rows.
+      let ord = orderTotals.get(r.orderName);
+      if (!ord) {
+        ord = {
+          storeId,
+          orderName: r.orderName,
+          date: r.orderDate,
+          userName: r.userName,
+          discountName: r.discountNames,
+          totalOrders: 0,
+          grossSales: 0,
+          discounts: 0,
+          refunds: 0,
+          netSales: 0,
+          taxes: 0,
+          shipping: 0,
+          totalSales: 0,
+          cogs: 0,
+          grossMargin: 0,
+        };
+        orderTotals.set(r.orderName, ord);
+      }
+      ord.totalOrders += r.totalOrders ?? 0;
+      ord.grossSales += r.grossSales ?? 0;
+      ord.discounts += r.discounts ?? 0;
+      ord.refunds += r.refunds ?? 0;
+      ord.netSales += r.netSales ?? 0;
+      ord.taxes += r.taxes ?? 0;
+      ord.shipping += r.shipping ?? 0;
+      ord.totalSales += r.totalSales ?? 0;
+      ord.cogs += r.cogs ?? 0;
+      ord.grossMargin += r.grossMargin ?? 0;
+
+      // Raw per-line detail (SKU/product/customer) — no aggregation, this is
+      // the new granularity the extra sheet columns exist to capture.
+      orderLineRows.push([
+        storeId, r.orderName, r.orderDate, r.userName, r.discountNames,
+        r.productCategory, r.productType, r.coreSku, r.variantSku,
+        r.customerType, r.customerTags, r.customerFullName, r.customerTotalNetSpent,
+        r.totalOrders, r.grossSales, r.discounts, r.refunds, r.netSales,
+        r.taxes, r.shipping, r.totalSales, r.cogs, r.grossMargin,
+      ]);
+    }
   }
 
-  const salesUpsertRows = [...dailyTotals.values()].map((d) => [
-    d.storeId,
-    d.date,
-    d.totalOrders,
-    d.grossSales,
-    d.discounts,
-    d.refunds,
-    d.netSales,
-    d.taxes,
-    d.shipping,
-    d.totalSales,
-    d.cogs,
-    d.grossMargin,
+  const salesRows = [...dailyTotals.values()].map((d) => [
+    d.storeId, d.date, d.totalOrders, d.grossSales, d.discounts, d.refunds,
+    d.netSales, d.taxes, d.shipping, d.totalSales, d.cogs, d.grossMargin,
   ]);
-  const userSalesUpsertRows = [...userTotals.values()].map((d) => [
-    d.storeId,
-    d.date,
-    d.userName,
-    d.totalOrders,
-    d.grossSales,
-    d.discounts,
-    d.refunds,
-    d.netSales,
-    d.taxes,
-    d.shipping,
-    d.totalSales,
-    d.cogs,
-    d.grossMargin,
+  const userSalesRows = [...userTotals.values()].map((d) => [
+    d.storeId, d.date, d.userName, d.totalOrders, d.grossSales, d.discounts, d.refunds,
+    d.netSales, d.taxes, d.shipping, d.totalSales, d.cogs, d.grossMargin,
   ]);
-  const discountUpsertRows = [...discountTotals.values()].map((d) => [
-    d.storeId,
-    d.date,
-    d.userName,
-    d.discountName,
-    d.totalDiscounts,
-    d.totalOrders,
+  const discountRows = [...discountTotals.values()].map((d) => [
+    d.storeId, d.date, d.userName, d.discountName, d.totalDiscounts, d.totalOrders,
   ]);
+  const orderRows = [...orderTotals.values()].map((o) => [
+    o.storeId, o.orderName, o.date, o.userName, o.discountName, o.totalOrders,
+    o.grossSales, o.discounts, o.refunds, o.netSales, o.taxes, o.shipping,
+    o.totalSales, o.cogs, o.grossMargin,
+  ]);
+
+  onProgress(
+    `Loading ${salesRows.length.toLocaleString("en-US")} daily, ${userSalesRows.length.toLocaleString("en-US")} user-daily, ` +
+      `${orderRows.length.toLocaleString("en-US")} orders, ${discountRows.length.toLocaleString("en-US")} discount combos, ` +
+      `${orderLineRows.length.toLocaleString("en-US")} line items`,
+  );
 
   const client = await pool.connect();
   try {
     await client.query("begin");
-    await batchUpsert(
-      client,
-      "sales_daily",
-      [
-        "store_id", "order_date", "total_orders", "gross_sales", "discounts", "refunds",
-        "net_sales", "taxes", "shipping", "total_sales", "cogs", "gross_margin",
-      ],
-      ["store_id", "order_date"],
-      [
-        "total_orders", "gross_sales", "discounts", "refunds", "net_sales",
-        "taxes", "shipping", "total_sales", "cogs", "gross_margin",
-      ],
-      salesUpsertRows,
+    // sales_order_lines now carries one row per line item (up to ~240k for a
+    // full 3-year reload, ~85k-and-growing for a current-year-only daily
+    // refresh) — its COPY alone can run well past the pool's normal 30s
+    // statement_timeout (built for report queries, not bulk loads). Scoped to
+    // this transaction only, so report-serving queries elsewhere keep the
+    // tight 30s guard. Measured ~226s for an 87k-line current-year load in
+    // August; left headroom for the rest of the year plus the 3-year backfill.
+    await client.query("set local statement_timeout = '600000'");
+    await deleteAndLoadTable(
+      client, "sales_daily", "order_date", deleteFromDate,
+      ["store_id", "order_date", "total_orders", "gross_sales", "discounts", "refunds",
+       "net_sales", "taxes", "shipping", "total_sales", "cogs", "gross_margin"],
+      salesRows,
     );
-    await batchUpsert(
-      client,
-      "sales_by_user",
-      [
-        "store_id", "day_date", "user_name", "total_orders", "gross_sales", "discounts", "refunds",
-        "net_sales", "taxes", "shipping", "total_sales", "cogs", "gross_margin",
-      ],
-      ["store_id", "day_date", "user_name"],
-      [
-        "total_orders", "gross_sales", "discounts", "refunds", "net_sales",
-        "taxes", "shipping", "total_sales", "cogs", "gross_margin",
-      ],
-      userSalesUpsertRows,
+    await deleteAndLoadTable(
+      client, "sales_by_user", "day_date", deleteFromDate,
+      ["store_id", "day_date", "user_name", "total_orders", "gross_sales", "discounts", "refunds",
+       "net_sales", "taxes", "shipping", "total_sales", "cogs", "gross_margin"],
+      userSalesRows,
     );
-    if (orderUpsertRows.length > 0) {
-      await batchUpsert(
-        client,
-        "sales_orders",
-        [
-          "store_id", "order_name", "day_date", "user_name", "discount_name", "total_orders",
-          "gross_sales", "discounts", "refunds", "net_sales", "taxes", "shipping", "total_sales",
-          "cogs", "gross_margin",
-        ],
-        ["order_name"],
-        [
-          "store_id", "day_date", "user_name", "discount_name", "total_orders", "gross_sales",
-          "discounts", "refunds", "net_sales", "taxes", "shipping", "total_sales", "cogs", "gross_margin",
-        ],
-        orderUpsertRows,
-      );
-    }
-    if (discountUpsertRows.length > 0) {
-      await batchUpsert(
-        client,
-        "discounts",
-        ["store_id", "day_date", "user_name", "discount_name", "total_discounts", "total_orders"],
-        ["store_id", "day_date", "user_name", "discount_name"],
-        ["total_discounts", "total_orders"],
-        discountUpsertRows,
-      );
-    }
+    await deleteAndLoadTable(
+      client, "sales_orders", "day_date", deleteFromDate,
+      ["store_id", "order_name", "day_date", "user_name", "discount_name", "total_orders",
+       "gross_sales", "discounts", "refunds", "net_sales", "taxes", "shipping", "total_sales",
+       "cogs", "gross_margin"],
+      orderRows,
+    );
+    await deleteAndLoadTable(
+      client, "discounts", "day_date", deleteFromDate,
+      ["store_id", "day_date", "user_name", "discount_name", "total_discounts", "total_orders"],
+      discountRows,
+    );
+    await deleteAndLoadTable(
+      client, "sales_order_lines", "day_date", deleteFromDate,
+      ["store_id", "order_name", "day_date", "user_name", "discount_name", "product_category",
+       "product_type", "core_sku", "variant_sku", "customer_type", "customer_tags",
+       "customer_full_name", "customer_total_net_spent", "total_orders", "gross_sales",
+       "discounts", "refunds", "net_sales", "taxes", "shipping", "total_sales", "cogs", "gross_margin"],
+      orderLineRows,
+    );
     await client.query("commit");
   } catch (e) {
     await client.query("rollback");
@@ -739,13 +717,13 @@ async function syncSalesFromSheet(
 
   return {
     sales: {
-      imported: salesUpsertRows.length,
+      imported: salesRows.length,
       skipped: rows.length - matchedRowCount,
       unmatchedLocations: [...unmatched],
     },
     discounts: {
-      imported: discountUpsertRows.length,
-      skipped: matchedRowCount - discountedRowCount,
+      imported: discountRows.length,
+      skipped: matchedRowCount - discountedLineCount,
       unmatchedLocations: [...unmatched],
     },
   };
@@ -847,6 +825,23 @@ async function syncRetailAuditFromSheet(
   return { poRows: poRows.length, auditRows: auditRows.length, dashboardRows: dashboardRows.length };
 }
 
+/**
+ * Full historical reload across all of `ranges` (e.g. the current-year tab
+ * plus prior-year archive tabs), unconditionally truncating and reloading
+ * every sales table. Not part of the regular daily sync — the daily job
+ * (via runSync) only ever refreshes the current year. Intended for one-off
+ * use, e.g. right after the sheet's format changes and a full re-baseline
+ * is needed.
+ */
+export async function runFullSalesBackfill(
+  sheetId: string,
+  ranges: string[],
+  onProgress: SyncProgress = noopProgress,
+): Promise<{ sales: SyncSummary["sales"]; discounts: SyncSummary["discounts"] }> {
+  const { stores, aliases } = await getStoresAndAliases();
+  return syncSalesFromSheet(sheetId, ranges, stores, aliases, null, onProgress);
+}
+
 export async function runSync(
   onProgress: SyncProgress = noopProgress,
   checkCancelled: CancelCheck = noopCancelCheck,
@@ -914,18 +909,23 @@ export async function runSync(
 
   // Discounts now come from the Sales sheet itself (each row is a per-user,
   // per-discount-combo slice of a day's orders), so one fetch covers both —
-  // no separate Discounts sheet needed.
+  // no separate Discounts sheet needed. Daily runs only touch the current
+  // calendar year (deleteFromDate = Jan 1) — prior years are loaded once via
+  // the standalone full-history backfill and never re-touched by this job,
+  // since closed years don't get corrected.
   await throwIfCancelled(checkCancelled);
   let sales: SyncSummary["sales"] = null;
   let discounts: SyncSummary["discounts"] = null;
   const salesSheetId = process.env.SALES_SHEET_ID;
   if (salesSheetId) {
     try {
+      const yearStart = `${new Date().getFullYear()}-01-01`;
       const result = await syncSalesFromSheet(
         salesSheetId,
-        process.env.SALES_SHEET_RANGE || "A:Z",
+        [process.env.SALES_SHEET_RANGE || "'Year to Date Sales in Google sheets'!A:W"],
         stores,
         aliases,
+        yearStart,
         onProgress,
       );
       sales = result.sales;
