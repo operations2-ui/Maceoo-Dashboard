@@ -596,7 +596,14 @@ async function syncSalesFromSheet(
       // Order-level aggregate (sum across every line sharing this order
       // name) for sales_orders — a raw per-line upsert keyed on order_name
       // would just overwrite itself down to the last line's partial amounts
-      // now that an order can span several rows.
+      // now that an order can span several rows. An order name can recur
+      // across a return/exchange line posted months after the original sale
+      // (confirmed in live data, e.g. a sale on 2024-10-29 refunded on
+      // 2025-05-09 under the same order name, across two different sheet
+      // tabs) — always anchor the order's date/store/user to its EARLIEST
+      // line rather than whichever line is processed first, so a full
+      // multi-tab backfill doesn't misattribute an order to the wrong year
+      // depending on tab order.
       let ord = orderTotals.get(r.orderName);
       if (!ord) {
         ord = {
@@ -617,6 +624,11 @@ async function syncSalesFromSheet(
           grossMargin: 0,
         };
         orderTotals.set(r.orderName, ord);
+      } else if (r.orderDate < ord.date) {
+        ord.date = r.orderDate;
+        ord.storeId = storeId;
+        ord.userName = r.userName;
+        ord.discountName = r.discountNames;
       }
       ord.totalOrders += r.totalOrders ?? 0;
       ord.grossSales += r.grossSales ?? 0;
@@ -687,6 +699,19 @@ async function syncSalesFromSheet(
        "net_sales", "taxes", "shipping", "total_sales", "cogs", "gross_margin"],
       userSalesRows,
     );
+    if (deleteFromDate !== null && orderRows.length > 0) {
+      // order_name is unique across the whole table, but an order can get a
+      // return/exchange line posted in a later calendar year under the same
+      // order name (confirmed in live data) — its sales_orders row then
+      // keeps the ORIGINAL sale's day_date, which can fall outside this
+      // scoped reload's date window. Without this, re-inserting that order
+      // name during a current-year-only refresh would hit the unique
+      // constraint. Delete by name first so the fresh row (from this sync's
+      // date-scoped view of the order) replaces it cleanly.
+      await client.query("delete from sales_orders where order_name = any($1)", [
+        orderRows.map((o) => o[1]),
+      ]);
+    }
     await deleteAndLoadTable(
       client, "sales_orders", "day_date", deleteFromDate,
       ["store_id", "order_name", "day_date", "user_name", "discount_name", "total_orders",
@@ -772,6 +797,11 @@ async function syncRetailAuditFromSheet(
   const client = await pool.connect();
   try {
     await client.query("begin");
+    // Same reasoning as the sales transaction's override: this table's COPY
+    // (127k+ rows combined) has been observed exceeding the pool's normal
+    // 30s statement_timeout under real network conditions, not just in the
+    // much larger sales load.
+    await client.query("set local statement_timeout = '180000'");
     await copyLoadTable(
       client,
       "po_raw_data",
