@@ -12,6 +12,7 @@ const links = [
   { href: "/sales", label: "Sales" },
   { href: "/discounts-analysis", label: "Discounts Analysis" },
   { href: "/retail-audit", label: "Retail Audit" },
+  { href: "/buy-plan", label: "Buy Plan" },
 ];
 
 const adminLinks = [

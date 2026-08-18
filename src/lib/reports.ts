@@ -322,6 +322,255 @@ export async function getEmployeeSummary(storeIds: string[], fromDate: string, t
   return rows;
 }
 
+/**
+ * Shared time-window SQL fragment for Buy Plan's "sold" columns, matching
+ * the 6 windows in the source screenshot: WTD, Last 7 days, MTD, Last 3
+ * months, YTD, All-time. `last_30d`/`last_90d` aren't display columns —
+ * they feed the insufficient/idle business rules below.
+ */
+const BUY_PLAN_WINDOW_SUMS = `
+  sum(quantity) filter (where day_date >= date_trunc('week', current_date))::int as wtd,
+  sum(quantity) filter (where day_date >= current_date - interval '7 days')::int as last_7d,
+  sum(quantity) filter (where day_date >= date_trunc('month', current_date))::int as mtd,
+  sum(quantity) filter (where day_date >= current_date - interval '3 months')::int as last_3mo,
+  sum(quantity) filter (where day_date >= date_trunc('year', current_date))::int as ytd,
+  sum(quantity)::int as all_time,
+  sum(quantity) filter (where day_date >= current_date - interval '30 days')::int as last_30d,
+  sum(quantity) filter (where day_date >= current_date - interval '90 days')::int as last_90d
+`;
+
+export interface BuyPlanStoreRow {
+  [key: string]: unknown;
+  store_id: string;
+  store_name: string;
+  wtd: number;
+  last_7d: number;
+  mtd: number;
+  last_3mo: number;
+  ytd: number;
+  all_time: number;
+  insufficient_count: number;
+  idle_count: number;
+}
+
+/**
+ * Store-level Buy Plan overview: units sold per store across the 6 windows,
+ * plus how many of that store's items are flagged insufficient/idle right
+ * now (per-item rules below) so a store needing attention is visible before
+ * drilling in. Two separate aggregations on purpose: the sold-window totals
+ * are pure store-grain sums, while the flag counts need item (variant)
+ * grain first — computing both at variant grain and rolling the totals up
+ * would just redo the same work at a finer level for no benefit.
+ */
+export async function getBuyPlanStoreSummary(storeIds: string[]): Promise<BuyPlanStoreRow[]> {
+  if (storeIds.length === 0) return [];
+  const { rows } = await pool.query(
+    `with known_skus as (
+       -- Real merchandise only: inventory_snapshots is a physical stock
+       -- count, so it never contains synthetic sales lines (shipping
+       -- charges, tailoring services, gift cards, etc). This is what keeps
+       -- those out of a "top-selling item" ranking without a fragile regex.
+       select distinct sku from inventory_snapshots
+     ),
+     sold as (
+       select l.store_id, ${BUY_PLAN_WINDOW_SUMS}
+       from sales_order_lines l
+       join known_skus k on k.sku = l.variant_sku
+       where l.store_id = any($1::uuid[]) and l.product_type <> 'Services'
+       group by l.store_id
+     ),
+     variant_sold as (
+       select l.store_id, l.variant_sku,
+         sum(l.quantity) filter (where l.day_date >= current_date - interval '30 days')::int as last_30d,
+         sum(l.quantity) filter (where l.day_date >= current_date - interval '90 days')::int as last_90d
+       from sales_order_lines l
+       join known_skus k on k.sku = l.variant_sku
+       where l.store_id = any($1::uuid[]) and l.product_type <> 'Services'
+       group by l.store_id, l.variant_sku
+     ),
+     latest_inv as (
+       select store_id, max(snapshot_date) as latest_date
+       from inventory_snapshots
+       where store_id = any($1::uuid[])
+       group by store_id
+     ),
+     inv_by_variant as (
+       select i.store_id, i.sku as variant_sku, i.on_hand
+       from inventory_snapshots i
+       join latest_inv li on li.store_id = i.store_id and li.latest_date = i.snapshot_date
+     ),
+     joined as (
+       select
+         coalesce(vs.store_id, iv.store_id) as store_id,
+         coalesce(iv.on_hand, 0) as on_hand,
+         coalesce(vs.last_30d, 0) as last_30d,
+         coalesce(vs.last_90d, 0) as last_90d
+       from variant_sold vs
+       full outer join inv_by_variant iv on iv.store_id = vs.store_id and iv.variant_sku = vs.variant_sku
+     ),
+     flagged as (
+       select store_id,
+         count(*) filter (
+           where last_30d > 0 and (on_hand = 0 or on_hand::numeric / (last_30d::numeric / 30.0) < 14)
+         )::int as insufficient_count,
+         count(*) filter (where on_hand > 0 and last_90d = 0)::int as idle_count
+       from joined
+       group by store_id
+     )
+     select s.id as store_id, s.name as store_name,
+       coalesce(sold.wtd, 0) as wtd, coalesce(sold.last_7d, 0) as last_7d, coalesce(sold.mtd, 0) as mtd,
+       coalesce(sold.last_3mo, 0) as last_3mo, coalesce(sold.ytd, 0) as ytd, coalesce(sold.all_time, 0) as all_time,
+       coalesce(flagged.insufficient_count, 0) as insufficient_count, coalesce(flagged.idle_count, 0) as idle_count
+     from stores s
+     left join sold on sold.store_id = s.id
+     left join flagged on flagged.store_id = s.id
+     where s.id = any($1::uuid[])
+     order by s.name`,
+    [storeIds],
+  );
+  return rows;
+}
+
+export interface BuyPlanItemRow {
+  [key: string]: unknown;
+  variant_sku: string;
+  core_sku: string;
+  description: string | null;
+  size_code: string | null;
+  vendor: string | null;
+  product_category: string;
+  product_type: string;
+  wtd: number;
+  last_7d: number;
+  mtd: number;
+  last_3mo: number;
+  ytd: number;
+  all_time: number;
+  on_hand: number;
+  days_of_supply: number | null;
+  status: "insufficient" | "idle" | "ok";
+}
+
+/**
+ * Item-level Buy Plan for one store, at variant (size) granularity rather
+ * than rolled up to style — the insufficient/transfer signal is only
+ * actionable at the size a customer actually buys (a style can be
+ * well-stocked in M and empty in L; rolling up would hide that). A full
+ * outer join between sold lines and the store's latest inventory snapshot
+ * is deliberate: it surfaces both "selling but under-stocked" and "in stock
+ * but not selling" items in one pass. Business rules (user-confirmed):
+ * insufficient = selling in the last 30 days with under 14 days of supply
+ * (or none left at all); idle = in stock with zero sales in the last 90 days.
+ */
+export async function getBuyPlanItems(storeId: string): Promise<BuyPlanItemRow[]> {
+  const { rows } = await pool.query(
+    `with known_skus as (
+       select distinct sku from inventory_snapshots
+     ),
+     sold as (
+       select l.variant_sku, l.core_sku,
+         (array_agg(l.product_category) filter (where l.product_category <> ''))[1] as product_category,
+         (array_agg(l.product_type) filter (where l.product_type <> ''))[1] as product_type,
+         ${BUY_PLAN_WINDOW_SUMS}
+       from sales_order_lines l
+       join known_skus k on k.sku = l.variant_sku
+       where l.store_id = $1 and l.product_type <> 'Services'
+       group by l.variant_sku, l.core_sku
+     ),
+     latest_date as (
+       select max(snapshot_date) as d from inventory_snapshots where store_id = $1
+     ),
+     inv as (
+       select i.sku as variant_sku, i.style_code as core_sku, i.description, i.size_code, i.vendor, i.on_hand
+       from inventory_snapshots i, latest_date
+       where i.store_id = $1 and i.snapshot_date = latest_date.d
+     )
+     select
+       coalesce(sold.variant_sku, inv.variant_sku) as variant_sku,
+       coalesce(sold.core_sku, inv.core_sku) as core_sku,
+       inv.description, inv.size_code, inv.vendor,
+       coalesce(sold.product_category, '') as product_category,
+       coalesce(sold.product_type, '') as product_type,
+       coalesce(sold.wtd, 0) as wtd, coalesce(sold.last_7d, 0) as last_7d, coalesce(sold.mtd, 0) as mtd,
+       coalesce(sold.last_3mo, 0) as last_3mo, coalesce(sold.ytd, 0) as ytd, coalesce(sold.all_time, 0) as all_time,
+       coalesce(inv.on_hand, 0) as on_hand,
+       case when coalesce(sold.last_30d, 0) > 0
+         then round(greatest(coalesce(inv.on_hand, 0), 0)::numeric / (sold.last_30d::numeric / 30.0), 1)
+         else null end as days_of_supply,
+       case
+         when coalesce(sold.last_30d, 0) > 0
+           and (coalesce(inv.on_hand, 0) = 0 or coalesce(inv.on_hand, 0)::numeric / (sold.last_30d::numeric / 30.0) < 14)
+           then 'insufficient'
+         when coalesce(inv.on_hand, 0) > 0 and coalesce(sold.last_90d, 0) = 0
+           then 'idle'
+         else 'ok'
+       end as status
+     from sold
+     full outer join inv on inv.variant_sku = sold.variant_sku
+     order by all_time desc nulls last`,
+    [storeId],
+  );
+  return rows;
+}
+
+export interface BuyPlanTransferSuggestion {
+  [key: string]: unknown;
+  store_id: string;
+  store_name: string;
+  on_hand: number;
+  last_30d: number;
+  spare: number;
+}
+
+/**
+ * For one insufficient item at one store, finds other stores with spare
+ * units of that exact variant to transfer from — "spare" keeps 14 days of
+ * that store's own supply (same threshold as the insufficient rule) and
+ * offers the rest, ranked highest-spare first. Lazy-loaded on demand per
+ * item (not precomputed for a whole item list), same reasoning as
+ * RetailAuditTable's click-to-expand SKU detail.
+ */
+export async function getBuyPlanTransferSuggestions(
+  variantSku: string,
+  excludeStoreId: string,
+): Promise<BuyPlanTransferSuggestion[]> {
+  const { rows } = await pool.query(
+    `with latest_inv as (
+       select store_id, max(snapshot_date) as d
+       from inventory_snapshots
+       where store_id <> $2
+       group by store_id
+     ),
+     inv as (
+       select i.store_id, i.on_hand
+       from inventory_snapshots i
+       join latest_inv li on li.store_id = i.store_id and li.d = i.snapshot_date
+       where i.sku = $1
+     ),
+     velocity as (
+       select store_id, sum(quantity) filter (where day_date >= current_date - interval '30 days')::int as last_30d
+       from sales_order_lines
+       where variant_sku = $1 and store_id <> $2
+       group by store_id
+     )
+     select store_id, store_name, on_hand, last_30d, spare from (
+       select s.id as store_id, s.name as store_name,
+         coalesce(inv.on_hand, 0) as on_hand,
+         coalesce(v.last_30d, 0) as last_30d,
+         coalesce(inv.on_hand, 0) - ceil(coalesce(v.last_30d, 0)::numeric / 30.0 * 14) as spare
+       from stores s
+       left join inv on inv.store_id = s.id
+       left join velocity v on v.store_id = s.id
+       where s.id <> $2
+     ) t
+     where spare > 0
+     order by spare desc
+     limit 3`,
+    [variantSku, excludeStoreId],
+  );
+  return rows;
+}
+
 export interface RetailAuditDashboardRow {
   [key: string]: unknown;
   po_number: string;
