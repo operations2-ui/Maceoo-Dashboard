@@ -1,6 +1,6 @@
 "use client";
 
-import FilterableTable, { type FilterConfig } from "@/components/FilterableTable";
+import FilterableTable from "@/components/FilterableTable";
 import type { SalesOrderRow } from "@/lib/reports";
 
 const money = (n: string | number | null) =>
@@ -11,21 +11,16 @@ const money = (n: string | number | null) =>
         maximumFractionDigits: 2,
       })}`;
 
-export default function SalesOrdersTable({ rows }: { rows: SalesOrderRow[] }) {
-  // Store isn't filterable here — the page-level Store/Date filter above the
-  // tabs already scopes every table's data, so a second Store control here
-  // would just duplicate it.
-  const filters: FilterConfig<SalesOrderRow>[] = [
-    { type: "select", key: "user_name", label: "User", value: (r) => r.user_name ?? "" },
-    { type: "numberMin", key: "discountPctMin", label: "Discount % ≥", value: (r) => Number(r.discount_pct) || 0 },
-  ];
-
+// Store/User/Discount% aren't filterable here anymore — the single search
+// box above the tabs (in DiscountsAnalysisTabs) is the only filter on this
+// page, on top of the page-level Store/Date filter.
+export default function SalesOrdersTable({ rows, search }: { rows: SalesOrderRow[]; search: string }) {
   return (
     <FilterableTable
       rows={rows}
       searchKeys={["order_name", "user_name", "store_name"]}
-      searchPlaceholder="Search order, user, or store..."
-      filters={filters}
+      search={search}
+      hideControls
       emptyMessage="No orders found for this filter."
       totals={(visible) => {
         const gross = visible.reduce((s, r) => s + (Number(r.gross_sales) || 0), 0);

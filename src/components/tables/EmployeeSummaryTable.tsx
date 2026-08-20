@@ -1,6 +1,6 @@
 "use client";
 
-import FilterableTable, { type FilterConfig } from "@/components/FilterableTable";
+import FilterableTable from "@/components/FilterableTable";
 import type { EmployeeSummaryRow } from "@/lib/reports";
 
 const money = (n: string | number | null) =>
@@ -11,17 +11,15 @@ const money = (n: string | number | null) =>
         maximumFractionDigits: 2,
       })}`;
 
-export default function EmployeeSummaryTable({ rows }: { rows: EmployeeSummaryRow[] }) {
-  const filters: FilterConfig<EmployeeSummaryRow>[] = [
-    { type: "numberMin", key: "grossSalesMin", label: "Gross Sales ≥", value: (r) => Number(r.gross_sales) || 0 },
-  ];
-
+// The single search box above the tabs (in DiscountsAnalysisTabs) is the
+// only filter on this page, on top of the page-level Store/Date filter.
+export default function EmployeeSummaryTable({ rows, search }: { rows: EmployeeSummaryRow[]; search: string }) {
   return (
     <FilterableTable
       rows={rows}
       searchKeys={["user_name"]}
-      searchPlaceholder="Search sales representative..."
-      filters={filters}
+      search={search}
+      hideControls
       emptyMessage="No employee sales found for this filter."
       totals={(visible) => {
         const sum = (key: keyof EmployeeSummaryRow) => visible.reduce((s, r) => s + (Number(r[key]) || 0), 0);

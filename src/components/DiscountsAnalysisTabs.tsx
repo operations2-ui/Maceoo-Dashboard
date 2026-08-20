@@ -15,6 +15,12 @@ const tabs: { key: TabKey; label: string }[] = [
   { key: "employees", label: "Summary Report — Employee Wise" },
 ];
 
+const searchPlaceholder: Record<TabKey, string> = {
+  orders: "Search order, user, or store...",
+  buckets: "",
+  employees: "Search sales representative...",
+};
+
 export default function DiscountsAnalysisTabs({
   orderRows,
   bucketRows,
@@ -27,6 +33,11 @@ export default function DiscountsAnalysisTabs({
   exportQs: string;
 }) {
   const [active, setActive] = useState<TabKey>("orders");
+  // One search box for the whole page, on top of the page-level Store/Date
+  // filter — the Discount % Distribution tab is a small fixed set of
+  // buckets with nothing to search, so the box is hidden there rather than
+  // shown but inert.
+  const [search, setSearch] = useState("");
 
   const exportHref =
     active === "orders"
@@ -39,6 +50,19 @@ export default function DiscountsAnalysisTabs({
 
   return (
     <div>
+      {active !== "buckets" && (
+        <div className="mb-4">
+          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Search</label>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={searchPlaceholder[active]}
+            className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm w-72"
+          />
+        </div>
+      )}
+
       <div className="flex items-center gap-1.5 mb-4 border-b border-slate-200 dark:border-slate-800 flex-wrap">
         {tabs.map((t) => (
           <button
@@ -58,9 +82,9 @@ export default function DiscountsAnalysisTabs({
 
       <div className="flex justify-end mb-3">{hasRows && <DownloadCsvLink href={exportHref} />}</div>
 
-      {active === "orders" && <SalesOrdersTable rows={orderRows} />}
+      {active === "orders" && <SalesOrdersTable rows={orderRows} search={search} />}
       {active === "buckets" && <DiscountBucketsTable rows={bucketRows} />}
-      {active === "employees" && <EmployeeSummaryTable rows={employeeRows} />}
+      {active === "employees" && <EmployeeSummaryTable rows={employeeRows} search={search} />}
     </div>
   );
 }

@@ -25,6 +25,8 @@ export default function FilterableTable<T extends Record<string, unknown>>({
   filters = [],
   emptyMessage,
   totals,
+  search: controlledSearch,
+  hideControls = false,
 }: {
   rows: T[];
   columns: Column<T>[];
@@ -34,8 +36,13 @@ export default function FilterableTable<T extends Record<string, unknown>>({
   emptyMessage?: string;
   /** Computes the pinned totals row from whatever's currently visible (after search/filters), so it tracks them. */
   totals?: (visibleRows: T[]) => Record<string, React.ReactNode>;
+  /** When given, search is driven by the parent instead of an internal input — pair with hideControls. */
+  search?: string;
+  /** Suppresses this table's own search/filter bar entirely, for a caller that renders its own search box elsewhere. */
+  hideControls?: boolean;
 }) {
-  const [search, setSearch] = useState("");
+  const [ownSearch, setOwnSearch] = useState("");
+  const search = controlledSearch ?? ownSearch;
   const [selectValues, setSelectValues] = useState<Record<string, string>>({});
   const [numberValues, setNumberValues] = useState<Record<string, string>>({});
 
@@ -74,69 +81,71 @@ export default function FilterableTable<T extends Record<string, unknown>>({
 
   return (
     <div>
-      <div className="flex flex-wrap items-end gap-3 mb-3">
-        <div>
-          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Search</label>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={searchPlaceholder}
-            className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm w-56"
-          />
-        </div>
-        {filters.map((f) =>
-          f.type === "select" ? (
-            <div key={f.key}>
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{f.label}</label>
-              <select
-                value={selectValues[f.key] ?? ""}
-                onChange={(e) => setSelectValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-2 py-1.5 text-sm"
-              >
-                <option value="">All</option>
-                {(selectOptions[f.key] ?? []).map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : (
-            <div key={f.key}>
-              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{f.label}</label>
-              <input
-                type="number"
-                value={numberValues[f.key] ?? ""}
-                onChange={(e) => setNumberValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-2 py-1.5 text-sm w-28"
-              />
-            </div>
-          ),
-        )}
-        {hasActiveFilters && (
-          <button
-            type="button"
-            onClick={() => {
-              setSearch("");
-              setSelectValues({});
-              setNumberValues({});
-            }}
-            className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 underline"
-          >
-            Clear filters
-          </button>
-        )}
-        <span className="text-sm text-slate-500 dark:text-slate-400 w-full sm:w-auto sm:ml-auto">
-          {hasActiveFilters ? (
-            <>
-              {filteredRows.length.toLocaleString("en-US")} of {rows.length.toLocaleString("en-US")} rows
-            </>
-          ) : (
-            <>{rows.length.toLocaleString("en-US")} rows</>
+      {!hideControls && (
+        <div className="flex flex-wrap items-end gap-3 mb-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Search</label>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setOwnSearch(e.target.value)}
+              placeholder={searchPlaceholder}
+              className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm w-56"
+            />
+          </div>
+          {filters.map((f) =>
+            f.type === "select" ? (
+              <div key={f.key}>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{f.label}</label>
+                <select
+                  value={selectValues[f.key] ?? ""}
+                  onChange={(e) => setSelectValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                  className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-2 py-1.5 text-sm"
+                >
+                  <option value="">All</option>
+                  {(selectOptions[f.key] ?? []).map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div key={f.key}>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{f.label}</label>
+                <input
+                  type="number"
+                  value={numberValues[f.key] ?? ""}
+                  onChange={(e) => setNumberValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                  className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-2 py-1.5 text-sm w-28"
+                />
+              </div>
+            ),
           )}
-        </span>
-      </div>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                setOwnSearch("");
+                setSelectValues({});
+                setNumberValues({});
+              }}
+              className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 underline"
+            >
+              Clear filters
+            </button>
+          )}
+          <span className="text-sm text-slate-500 dark:text-slate-400 w-full sm:w-auto sm:ml-auto">
+            {hasActiveFilters ? (
+              <>
+                {filteredRows.length.toLocaleString("en-US")} of {rows.length.toLocaleString("en-US")} rows
+              </>
+            ) : (
+              <>{rows.length.toLocaleString("en-US")} rows</>
+            )}
+          </span>
+        </div>
+      )}
       <DataTable
         rows={filteredRows}
         columns={columns}
