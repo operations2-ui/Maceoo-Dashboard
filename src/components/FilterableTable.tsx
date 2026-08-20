@@ -24,6 +24,7 @@ export default function FilterableTable<T extends Record<string, unknown>>({
   searchPlaceholder = "Search...",
   filters = [],
   emptyMessage,
+  totals,
 }: {
   rows: T[];
   columns: Column<T>[];
@@ -31,6 +32,8 @@ export default function FilterableTable<T extends Record<string, unknown>>({
   searchPlaceholder?: string;
   filters?: FilterConfig<T>[];
   emptyMessage?: string;
+  /** Computes the pinned totals row from whatever's currently visible (after search/filters), so it tracks them. */
+  totals?: (visibleRows: T[]) => Record<string, React.ReactNode>;
 }) {
   const [search, setSearch] = useState("");
   const [selectValues, setSelectValues] = useState<Record<string, string>>({});
@@ -134,7 +137,12 @@ export default function FilterableTable<T extends Record<string, unknown>>({
           )}
         </span>
       </div>
-      <DataTable rows={filteredRows} columns={columns} emptyMessage={emptyMessage} />
+      <DataTable
+        rows={filteredRows}
+        columns={columns}
+        emptyMessage={emptyMessage}
+        totals={totals ? totals(filteredRows) : undefined}
+      />
     </div>
   );
 }

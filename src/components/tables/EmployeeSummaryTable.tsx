@@ -23,6 +23,20 @@ export default function EmployeeSummaryTable({ rows }: { rows: EmployeeSummaryRo
       searchPlaceholder="Search sales representative..."
       filters={filters}
       emptyMessage="No employee sales found for this filter."
+      totals={(visible) => {
+        const sum = (key: keyof EmployeeSummaryRow) => visible.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+        return {
+          user_name: `Total (${visible.length.toLocaleString("en-US")} reps)`,
+          total_orders: sum("total_orders").toLocaleString("en-US"),
+          gross_sales: money(sum("gross_sales")),
+          discounts: money(sum("discounts")),
+          refunds: money(sum("refunds")),
+          net_sales: money(sum("net_sales")),
+          discounts_over_15: money(sum("discounts_over_15")),
+          orders_over_15: sum("orders_over_15").toLocaleString("en-US"),
+          gross_sales_over_15: money(sum("gross_sales_over_15")),
+        };
+      }}
       columns={[
         { key: "user_name", header: "Sales Representative Name", truncate: true },
         { key: "total_orders", header: "Total Orders", align: "right" },

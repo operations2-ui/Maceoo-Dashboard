@@ -25,6 +25,20 @@ export default function SalesOrdersTable({ rows }: { rows: SalesOrderRow[] }) {
       searchPlaceholder="Search order, user, or store..."
       filters={filters}
       emptyMessage="No orders found for this filter."
+      totals={(visible) => {
+        const gross = visible.reduce((s, r) => s + (Number(r.gross_sales) || 0), 0);
+        const discounts = visible.reduce((s, r) => s + (Number(r.discounts) || 0), 0);
+        const refunds = visible.reduce((s, r) => s + (Number(r.refunds) || 0), 0);
+        const net = visible.reduce((s, r) => s + (Number(r.net_sales) || 0), 0);
+        return {
+          day_date: `Total (${visible.length.toLocaleString("en-US")} orders)`,
+          gross_sales: money(gross),
+          discounts: money(discounts),
+          refunds: money(refunds),
+          net_sales: money(net),
+          discount_pct: gross > 0 ? `${((discounts / gross) * 100).toFixed(1)}%` : "—",
+        };
+      }}
       columns={[
         { key: "day_date", header: "Date" },
         { key: "store_name", header: "Store" },

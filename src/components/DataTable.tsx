@@ -13,10 +13,13 @@ export default function DataTable<T extends Record<string, unknown>>({
   columns,
   rows,
   emptyMessage = "No results.",
+  totals,
 }: {
   columns: Column<T>[];
   rows: T[];
   emptyMessage?: string;
+  /** Optional pinned row of precomputed totals, keyed by column key — rendered right below the header. */
+  totals?: Record<string, React.ReactNode>;
 }) {
   if (rows.length === 0) {
     return (
@@ -42,6 +45,20 @@ export default function DataTable<T extends Record<string, unknown>>({
               </th>
             ))}
           </tr>
+          {totals && (
+            <tr className="bg-slate-100 dark:bg-slate-800/80 border-b-2 border-slate-300 dark:border-slate-700">
+              {columns.map((c) => (
+                <td
+                  key={c.key}
+                  className={`px-3 py-2 font-semibold whitespace-nowrap text-slate-800 dark:text-slate-200 ${
+                    c.align === "right" ? "text-right tabular-nums" : "text-left"
+                  }`}
+                >
+                  {totals[c.key] ?? ""}
+                </td>
+              ))}
+            </tr>
+          )}
         </thead>
         <tbody>
           {rows.map((row, i) => (
