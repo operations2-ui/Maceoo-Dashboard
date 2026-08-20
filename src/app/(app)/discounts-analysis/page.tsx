@@ -1,7 +1,6 @@
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getAccessibleStores } from "@/lib/authz";
 import { getSalesOrders, getDiscountBuckets, getEmployeeSummary } from "@/lib/reports";
-import { StoreDateRangeFilter } from "@/components/FilterForm";
 import DiscountsAnalysisTabs from "@/components/DiscountsAnalysisTabs";
 
 export default async function DiscountsAnalysisPage({
@@ -38,9 +37,11 @@ export default async function DiscountsAnalysisPage({
         Per-order detail, discount-percentage distribution, and employee-wise summary for the selected store(s) and
         period.
       </p>
-      <StoreDateRangeFilter stores={stores} store={store} from={fromDate} to={toDate} />
-
       <DiscountsAnalysisTabs
+        stores={stores}
+        store={store}
+        from={fromDate}
+        to={toDate}
         orderRows={orderRows}
         bucketRows={bucketRows}
         employeeRows={employeeRows}

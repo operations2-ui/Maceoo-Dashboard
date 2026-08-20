@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import type { AccessibleStore } from "@/lib/authz";
 import type { SalesOrderRow, DiscountBucketRow, EmployeeSummaryRow } from "@/lib/reports";
+import { stickyBarClass } from "@/components/FilterForm";
 import SalesOrdersTable from "@/components/tables/SalesOrdersTable";
 import DiscountBucketsTable from "@/components/tables/DiscountBucketsTable";
 import EmployeeSummaryTable from "@/components/tables/EmployeeSummaryTable";
@@ -22,22 +24,31 @@ const searchPlaceholder: Record<TabKey, string> = {
 };
 
 export default function DiscountsAnalysisTabs({
+  stores,
+  store,
+  from,
+  to,
   orderRows,
   bucketRows,
   employeeRows,
   exportQs,
 }: {
+  stores: AccessibleStore[];
+  store?: string;
+  from: string;
+  to: string;
   orderRows: SalesOrderRow[];
   bucketRows: DiscountBucketRow[];
   employeeRows: EmployeeSummaryRow[];
   exportQs: string;
 }) {
   const [active, setActive] = useState<TabKey>("orders");
-  // One search box for the whole page, on top of the page-level Store/Date
-  // filter — the Discount % Distribution tab is a small fixed set of
-  // buckets with nothing to search, so the box is hidden there rather than
-  // shown but inert.
+  // One search box for the whole page, sharing the same row as the
+  // Store/Date filter — the Discount % Distribution tab is a small fixed
+  // set of buckets with nothing to search, so the box is hidden there
+  // rather than shown but inert.
   const [search, setSearch] = useState("");
+  const storeName = store && store !== "all" ? stores.find((s) => s.id === store)?.name ?? "Unknown store" : "All stores";
 
   const exportHref =
     active === "orders"
@@ -50,18 +61,65 @@ export default function DiscountsAnalysisTabs({
 
   return (
     <div>
-      {active !== "buckets" && (
-        <div className="mb-4">
-          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Search</label>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={searchPlaceholder[active]}
-            className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm w-72"
-          />
-        </div>
-      )}
+      <div className={stickyBarClass}>
+        <form method="get" className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Store</label>
+            <select
+              name="store"
+              defaultValue={store ?? "all"}
+              className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm min-w-[10rem]"
+            >
+              <option value="all">All stores</option>
+              {stores.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">From</label>
+            <input
+              type="date"
+              name="from"
+              defaultValue={from}
+              className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">To</label>
+            <input
+              type="date"
+              name="to"
+              defaultValue={to}
+              className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm"
+            />
+          </div>
+          <button type="submit" className="rounded-md bg-slate-900 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 transition-colors duration-150 active:scale-95">
+            Apply
+          </button>
+          {active !== "buckets" && (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Search</label>
+              {/* No `name` — this box is purely client-side filtering of the already-loaded rows, not part of the GET submission above. */}
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={searchPlaceholder[active]}
+                className="rounded-md border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-3 py-1.5 text-sm w-64"
+              />
+            </div>
+          )}
+          <span className="text-sm text-slate-500 dark:text-slate-400 w-full sm:w-auto sm:ml-auto">
+            Showing: <span className="font-medium text-slate-700 dark:text-slate-200">{storeName}</span> ·{" "}
+            <span className="font-medium text-slate-700 dark:text-slate-200">
+              {from} to {to}
+            </span>
+          </span>
+        </form>
+      </div>
 
       <div className="flex items-center gap-1.5 mb-4 border-b border-slate-200 dark:border-slate-800 flex-wrap">
         {tabs.map((t) => (
