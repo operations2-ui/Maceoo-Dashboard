@@ -23,6 +23,22 @@ export default function SalesTable({ rows }: { rows: SalesRow[] }) {
       searchPlaceholder="Search store or date..."
       filters={filters}
       emptyMessage="No sales data for this filter."
+      totals={(visible) => {
+        const sum = (key: keyof SalesRow) => visible.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+        return {
+          order_date: `Total (${visible.length.toLocaleString("en-US")} days)`,
+          total_orders: sum("total_orders").toLocaleString("en-US"),
+          gross_sales: money(sum("gross_sales")),
+          discounts: money(sum("discounts")),
+          refunds: money(sum("refunds")),
+          net_sales: money(sum("net_sales")),
+          taxes: money(sum("taxes")),
+          shipping: money(sum("shipping")),
+          total_sales: money(sum("total_sales")),
+          cogs: money(sum("cogs")),
+          gross_margin: money(sum("gross_margin")),
+        };
+      }}
       columns={[
         { key: "order_date", header: "Date" },
         { key: "store_name", header: "Store" },

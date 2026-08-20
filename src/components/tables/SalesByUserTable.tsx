@@ -24,6 +24,20 @@ export default function SalesByUserTable({ rows }: { rows: SalesByUserRow[] }) {
       searchPlaceholder="Search user or store..."
       filters={filters}
       emptyMessage="No sales data found for this filter."
+      totals={(visible) => {
+        const orders = visible.reduce((s, r) => s + (r.total_orders ?? 0), 0);
+        const gross = visible.reduce((s, r) => s + (Number(r.gross_sales) || 0), 0);
+        const discounts = visible.reduce((s, r) => s + (Number(r.discounts) || 0), 0);
+        const net = visible.reduce((s, r) => s + (Number(r.net_sales) || 0), 0);
+        return {
+          day_date: `Total (${visible.length.toLocaleString("en-US")} rows)`,
+          total_orders: orders.toLocaleString("en-US"),
+          gross_sales: money(gross),
+          discounts: money(discounts),
+          discount_pct: gross > 0 ? `${((discounts / gross) * 100).toFixed(1)}%` : "—",
+          net_sales: money(net),
+        };
+      }}
       columns={[
         { key: "day_date", header: "Date" },
         { key: "store_name", header: "Store" },

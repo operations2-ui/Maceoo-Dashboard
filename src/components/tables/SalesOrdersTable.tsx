@@ -12,8 +12,10 @@ const money = (n: string | number | null) =>
       })}`;
 
 export default function SalesOrdersTable({ rows }: { rows: SalesOrderRow[] }) {
+  // Store isn't filterable here — the page-level Store/Date filter above the
+  // tabs already scopes every table's data, so a second Store control here
+  // would just duplicate it.
   const filters: FilterConfig<SalesOrderRow>[] = [
-    { type: "select", key: "store_name", label: "Store", value: (r) => r.store_name ?? "" },
     { type: "select", key: "user_name", label: "User", value: (r) => r.user_name ?? "" },
     { type: "numberMin", key: "discountPctMin", label: "Discount % ≥", value: (r) => Number(r.discount_pct) || 0 },
   ];
