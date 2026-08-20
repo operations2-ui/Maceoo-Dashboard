@@ -758,23 +758,47 @@ export interface RetailAuditDetailRow {
  * blank — "not received" and "not yet audited" both mean nothing has arrived
  * yet, so the difference columns should show the real shortfall either way
  * (e.g. shipped 1, received blank -> Shipped - Received = 1, not "—").
+ *
+ * Both source tables can carry more than one line for the same (PO, SKU) —
+ * confirmed in live data, e.g. one PO listed the same SKU on two separate
+ * lines with matching quantities, and another SKU on two lines with
+ * genuinely different quantities. One row per SKU is what the sheet
+ * actually means by "the PO's order for this SKU," so each side is summed
+ * by (PO, SKU) before joining, rather than joined at the raw line level
+ * where a duplicate on either side would fan out into extra rows.
  */
 export async function getRetailAuditDetail(poNumber: string): Promise<RetailAuditDetailRow[]> {
   const { rows } = await pool.query(
-    `select
-       p.document_number as po_number,
-       trim(split_part(p.item, ':', 2)) as sku,
-       p.display_name as item_name,
-       p.quantity as po_quantity,
+    `with po_by_sku as (
+       select
+         document_number as po_number,
+         trim(split_part(item, ':', 2)) as sku,
+         (array_agg(display_name order by line_id))[1] as item_name,
+         sum(quantity) as po_quantity
+       from po_raw_data
+       where document_number = $1
+       group by document_number, trim(split_part(item, ':', 2))
+     ),
+     audit_by_sku as (
+       select po_number, sku,
+         sum(quantity_received) as quantity_received,
+         sum(quantity_shipped) as quantity_shipped
+       from retail_audit_raw_data
+       where po_number = $1
+       group by po_number, sku
+     )
+     select
+       po.po_number,
+       po.sku,
+       po.item_name,
+       po.po_quantity,
        coalesce(a.quantity_received, 0) as quantity_received,
        coalesce(a.quantity_shipped, 0) as quantity_shipped,
        coalesce(a.quantity_shipped, 0) - coalesce(a.quantity_received, 0) as diff_shipped_received,
-       p.quantity - coalesce(a.quantity_received, 0) as diff_ordered_received
-     from po_raw_data p
-     left join retail_audit_raw_data a
-       on a.po_number = p.document_number and a.sku = trim(split_part(p.item, ':', 2))
-     where p.document_number = $1
-     order by (coalesce(a.quantity_shipped, 0) - coalesce(a.quantity_received, 0)) desc, p.line_id`,
+       po.po_quantity - coalesce(a.quantity_received, 0) as diff_ordered_received
+     from po_by_sku po
+     left join audit_by_sku a on a.po_number = po.po_number and a.sku = po.sku
+     order by (coalesce(a.quantity_shipped, 0) - coalesce(a.quantity_received, 0)) desc, po.sku`,
     [poNumber],
   );
   return rows;
