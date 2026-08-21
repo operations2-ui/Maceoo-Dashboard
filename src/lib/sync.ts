@@ -499,6 +499,18 @@ async function syncSalesFromSheet(
   let matchedRowCount = 0;
   let discountedLineCount = 0;
 
+  // "Total orders" in the sheet is a per-LINE flag (1 on a line that
+  // represents a real sold unit, 0 on refund/synthetic lines) — NOT a
+  // per-order count, even though it looks like one. Confirmed against live
+  // data: a single 13-line order had total_orders=1 on every one of its 13
+  // product lines, so summing it the way every other numeric column is
+  // summed would report that one order as 13. The correct order count is
+  // the number of DISTINCT order names touching a given bucket, tracked
+  // here and applied to each Total's totalOrders after the main loop.
+  const dailyOrderNames = new Map<string, Set<string>>();
+  const userOrderNames = new Map<string, Set<string>>();
+  const discountOrderNames = new Map<string, Set<string>>();
+
   for (const r of rows) {
     const storeId = resolveStoreId(r.locationName, stores, aliases, "sheet");
     if (!storeId) {
@@ -527,8 +539,11 @@ async function syncSalesFromSheet(
       };
       dailyTotals.set(key, day);
     }
+    if (r.orderName) {
+      if (!dailyOrderNames.has(key)) dailyOrderNames.set(key, new Set());
+      dailyOrderNames.get(key)!.add(r.orderName);
+    }
     day.totalQuantity += r.quantity ?? 0;
-    day.totalOrders += r.totalOrders ?? 0;
     day.grossSales += r.grossSales ?? 0;
     day.discounts += r.discounts ?? 0;
     day.refunds += r.refunds ?? 0;
@@ -563,8 +578,11 @@ async function syncSalesFromSheet(
       };
       userTotals.set(userKey, userDay);
     }
+    if (r.orderName) {
+      if (!userOrderNames.has(userKey)) userOrderNames.set(userKey, new Set());
+      userOrderNames.get(userKey)!.add(r.orderName);
+    }
     userDay.totalQuantity += r.quantity ?? 0;
-    userDay.totalOrders += r.totalOrders ?? 0;
     userDay.grossSales += r.grossSales ?? 0;
     userDay.discounts += r.discounts ?? 0;
     userDay.refunds += r.refunds ?? 0;
@@ -594,7 +612,10 @@ async function syncSalesFromSheet(
         discountTotals.set(discountKey, discountTotal);
       }
       discountTotal.totalDiscounts += r.discounts ?? 0;
-      discountTotal.totalOrders += r.totalOrders ?? 0;
+      if (r.orderName) {
+        if (!discountOrderNames.has(discountKey)) discountOrderNames.set(discountKey, new Set());
+        discountOrderNames.get(discountKey)!.add(r.orderName);
+      }
     }
 
     if (r.orderName) {
@@ -618,7 +639,10 @@ async function syncSalesFromSheet(
           userName: r.userName,
           discountName: r.discountNames,
           totalQuantity: 0,
-          totalOrders: 0,
+          // Always exactly 1 — this map is already keyed by order_name, so
+          // each entry IS one order by construction. The raw per-line
+          // "Total orders" flag isn't a count to sum (see note above).
+          totalOrders: 1,
           grossSales: 0,
           discounts: 0,
           refunds: 0,
@@ -637,7 +661,6 @@ async function syncSalesFromSheet(
         ord.discountName = r.discountNames;
       }
       ord.totalQuantity += r.quantity ?? 0;
-      ord.totalOrders += r.totalOrders ?? 0;
       ord.grossSales += r.grossSales ?? 0;
       ord.discounts += r.discounts ?? 0;
       ord.refunds += r.refunds ?? 0;
@@ -659,6 +682,10 @@ async function syncSalesFromSheet(
       ]);
     }
   }
+
+  for (const [key, day] of dailyTotals) day.totalOrders = dailyOrderNames.get(key)?.size ?? 0;
+  for (const [key, userDay] of userTotals) userDay.totalOrders = userOrderNames.get(key)?.size ?? 0;
+  for (const [key, discountTotal] of discountTotals) discountTotal.totalOrders = discountOrderNames.get(key)?.size ?? 0;
 
   const salesRows = [...dailyTotals.values()].map((d) => [
     d.storeId, d.date, d.totalQuantity, d.totalOrders, d.grossSales, d.discounts, d.refunds,
