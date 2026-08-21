@@ -1,6 +1,13 @@
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getAccessibleStores } from "@/lib/authz";
-import { getSales, getDiscounts, getInventoryAlertSummary, type SalesRow, type DiscountRow } from "@/lib/reports";
+import {
+  getSales,
+  getDiscounts,
+  getInventoryAlertSummary,
+  getDistinctOrderCount,
+  type SalesRow,
+  type DiscountRow,
+} from "@/lib/reports";
 import { StoreDateRangeFilter } from "@/components/FilterForm";
 import StatTile from "@/components/StatTile";
 import SalesByStoreBar from "@/components/SalesByStoreBar";
@@ -44,14 +51,18 @@ function shiftYear(iso: string, delta: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+// Deliberately excludes total_orders — sales_daily.total_orders is a
+// correct distinct-order count for a single day, but summing it across
+// multiple days over-counts any order whose lines land on different days
+// within the period (e.g. sold one day, refunded a later one). Period-level
+// order counts come from getDistinctOrderCount (sales_orders) instead.
 function sumSales(rows: SalesRow[]) {
   return rows.reduce(
     (acc, r) => ({
-      orders: acc.orders + (r.total_orders ?? 0),
       netSales: acc.netSales + Number(r.net_sales ?? 0),
       grossMargin: acc.grossMargin + Number(r.gross_margin ?? 0),
     }),
-    { orders: 0, netSales: 0, grossMargin: 0 },
+    { netSales: 0, grossMargin: 0 },
   );
 }
 
@@ -86,20 +97,23 @@ export default async function Home({
   const prevFromDate = shiftYear(fromDate, -1);
   const prevToDate = shiftYear(toDate, -1);
 
-  const [salesRows, discountRows, prevSalesRows, prevDiscountRows, alerts] = await Promise.all([
-    getSales(storeIds, fromDate, toDate),
-    getDiscounts(storeIds, fromDate, toDate),
-    getSales(storeIds, prevFromDate, prevToDate),
-    getDiscounts(storeIds, prevFromDate, prevToDate),
-    getInventoryAlertSummary(storeIds),
-  ]);
+  const [salesRows, discountRows, prevSalesRows, prevDiscountRows, alerts, orderCount, prevOrderCount] =
+    await Promise.all([
+      getSales(storeIds, fromDate, toDate),
+      getDiscounts(storeIds, fromDate, toDate),
+      getSales(storeIds, prevFromDate, prevToDate),
+      getDiscounts(storeIds, prevFromDate, prevToDate),
+      getInventoryAlertSummary(storeIds),
+      getDistinctOrderCount(storeIds, fromDate, toDate),
+      getDistinctOrderCount(storeIds, prevFromDate, prevToDate),
+    ]);
 
   const totals = sumSales(salesRows);
   const prevTotals = sumSales(prevSalesRows);
   const totalDiscounts = sumDiscounts(discountRows);
   const prevTotalDiscounts = sumDiscounts(prevDiscountRows);
-  const avgOrderValue = totals.orders > 0 ? totals.netSales / totals.orders : 0;
-  const prevAvgOrderValue = prevTotals.orders > 0 ? prevTotals.netSales / prevTotals.orders : 0;
+  const avgOrderValue = orderCount > 0 ? totals.netSales / orderCount : 0;
+  const prevAvgOrderValue = prevOrderCount > 0 ? prevTotals.netSales / prevOrderCount : 0;
 
   const byStore = new Map<string, number>();
   for (const r of salesRows) byStore.set(r.store_name, (byStore.get(r.store_name) ?? 0) + Number(r.net_sales ?? 0));
@@ -135,8 +149,8 @@ export default async function Home({
         />
         <StatTile
           label="Total orders"
-          value={totals.orders.toLocaleString("en-US")}
-          deltaPct={pctDelta(totals.orders, prevTotals.orders)}
+          value={orderCount.toLocaleString("en-US")}
+          deltaPct={pctDelta(orderCount, prevOrderCount)}
           comparisonLabel={comparisonLabel}
         />
         <StatTile
@@ -164,14 +178,14 @@ export default async function Home({
         />
         <StatTile
           label="Negative inventory"
-          value={alerts.negativeCount.toLocaleString("en-US")}
-          tone={alerts.negativeCount > 0 ? "critical" : "default"}
+          value={alerts.negativeCount == null ? "—" : alerts.negativeCount.toLocaleString("en-US")}
+          tone={alerts.negativeCount != null && alerts.negativeCount > 0 ? "critical" : "default"}
           href="/inventory/negative"
         />
         <StatTile
           label="Missing size styles"
-          value={alerts.missingSizeStyleCount.toLocaleString("en-US")}
-          tone={alerts.missingSizeStyleCount > 0 ? "warning" : "default"}
+          value={alerts.missingSizeStyleCount == null ? "—" : alerts.missingSizeStyleCount.toLocaleString("en-US")}
+          tone={alerts.missingSizeStyleCount != null && alerts.missingSizeStyleCount > 0 ? "warning" : "default"}
           href="/inventory/missing-sizes"
         />
         <StatTile

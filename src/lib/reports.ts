@@ -138,8 +138,9 @@ export interface SalesRow {
 
 export interface InventoryAlertSummary {
   latestDate: string | null;
-  negativeCount: number;
-  missingSizeStyleCount: number;
+  /** null when the underlying query timed out — degrade the stat tile to "—" rather than crash the page. */
+  negativeCount: number | null;
+  missingSizeStyleCount: number | null;
 }
 
 /** Snapshot of today's operational alerts across all accessible stores, for the Overview dashboard. */
@@ -153,14 +154,43 @@ export async function getInventoryAlertSummary(storeIds: string[]): Promise<Inve
   const latestDate: string | null = dateRows[0]?.latest ?? null;
   if (!latestDate) return { latestDate: null, negativeCount: 0, missingSizeStyleCount: 0 };
 
-  const { rows: negRows } = await pool.query(
-    "select count(*)::int as c from inventory_snapshots where store_id = any($1::uuid[]) and snapshot_date = $2 and on_hand < 0",
-    [storeIds, latestDate],
+  // Best-effort: getMissingSizes fans out one query per store concurrently
+  // (report_missing_sizes is single-store), which under real-world network
+  // slowness can cumulatively exceed the pool's statement timeout — observed
+  // taking down the entire Overview page for an unrelated stat tile. Degrade
+  // to null for just the affected number instead of failing the whole page.
+  const [negativeCount, missingSizeStyleCount] = await Promise.all([
+    pool
+      .query(
+        "select count(*)::int as c from inventory_snapshots where store_id = any($1::uuid[]) and snapshot_date = $2 and on_hand < 0",
+        [storeIds, latestDate],
+      )
+      .then((r) => r.rows[0]?.c ?? 0)
+      .catch(() => null),
+    getMissingSizes(storeIds, latestDate)
+      .then((rows) => rows.length)
+      .catch(() => null),
+  ]);
+
+  return { latestDate, negativeCount, missingSizeStyleCount };
+}
+
+/**
+ * Distinct order count for a period — the correct source for a "Total
+ * Orders" figure spanning more than one day. sales_daily.total_orders is
+ * accurate per single day (deduplicated by order_name within that day),
+ * but summing it across multiple days over-counts any order whose lines
+ * land on different days within the range (e.g. sold one day, refunded a
+ * later one — confirmed common in this data). sales_orders is one row per
+ * order by construction, so counting its rows for the period is exact.
+ */
+export async function getDistinctOrderCount(storeIds: string[], fromDate: string, toDate: string): Promise<number> {
+  if (storeIds.length === 0) return 0;
+  const { rows } = await pool.query(
+    `select count(*)::int as n from sales_orders where store_id = any($1::uuid[]) and day_date >= $2 and day_date <= $3`,
+    [storeIds, fromDate, toDate],
   );
-
-  const missingSizeStyleCount = (await getMissingSizes(storeIds, latestDate)).length;
-
-  return { latestDate, negativeCount: negRows[0]?.c ?? 0, missingSizeStyleCount };
+  return rows[0]?.n ?? 0;
 }
 
 export async function getSales(storeIds: string[], fromDate: string, toDate: string): Promise<SalesRow[]> {
