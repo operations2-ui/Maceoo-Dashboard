@@ -11,7 +11,7 @@ const money = (n: number | string | null) =>
         maximumFractionDigits: 2,
       })}`;
 
-export default function SalesTable({ rows }: { rows: SalesRow[] }) {
+export default function SalesTable({ rows, exactOrderCount }: { rows: SalesRow[]; exactOrderCount?: number }) {
   const filters: FilterConfig<SalesRow>[] = [
     { type: "numberMin", key: "netSalesMin", label: "Net Sales ≥", value: (r) => Number(r.net_sales) || 0 },
   ];
@@ -25,9 +25,18 @@ export default function SalesTable({ rows }: { rows: SalesRow[] }) {
       emptyMessage="No sales data for this filter."
       totals={(visible) => {
         const sum = (key: keyof SalesRow) => visible.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+        // Each day's own total_orders is exact, but summing across days
+        // over-counts any order whose lines land on different days (sold
+        // one day, refunded another). exactOrderCount (distinct order_name
+        // count from sales_orders) is precise for the whole period, so use
+        // it whenever nothing's been filtered out; a search/filter narrows
+        // to a subset that count no longer describes, so fall back to the
+        // day-summed figure there — the best available without another query.
+        const isFullPeriod = visible.length === rows.length;
+        const totalOrders = isFullPeriod && exactOrderCount != null ? exactOrderCount : sum("total_orders");
         return {
           order_date: `Total (${visible.length.toLocaleString("en-US")} days)`,
-          total_orders: sum("total_orders").toLocaleString("en-US"),
+          total_orders: totalOrders.toLocaleString("en-US"),
           gross_sales: money(sum("gross_sales")),
           discounts: money(sum("discounts")),
           refunds: money(sum("refunds")),

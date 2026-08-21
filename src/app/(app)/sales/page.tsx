@@ -107,7 +107,7 @@ export default async function SalesPage({
       <SalesTrendChart rows={rows} />
       <StoreSalesChart rows={rows} />
 
-      <SalesTable rows={rows} />
+      <SalesTable rows={rows} exactOrderCount={orderCount} />
 
       <div className="flex items-center justify-between mt-8 mb-3 flex-wrap gap-2">
         <div>
@@ -121,7 +121,7 @@ export default async function SalesPage({
           <DownloadCsvLink href={`/api/export/sales-by-user?store=${store ?? "all"}&from=${fromDate}&to=${toDate}`} />
         )}
       </div>
-      <SalesByUserTable rows={userRows} />
+      <SalesByUserTable rows={userRows} exactOrderCount={orderCount} />
     </div>
   );
 }

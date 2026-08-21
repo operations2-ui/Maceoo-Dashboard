@@ -11,7 +11,7 @@ const money = (n: string | number | null) =>
         maximumFractionDigits: 2,
       })}`;
 
-export default function SalesByUserTable({ rows }: { rows: SalesByUserRow[] }) {
+export default function SalesByUserTable({ rows, exactOrderCount }: { rows: SalesByUserRow[]; exactOrderCount?: number }) {
   const filters: FilterConfig<SalesByUserRow>[] = [
     { type: "select", key: "user_name", label: "User", value: (r) => r.user_name ?? "" },
     { type: "numberMin", key: "discountPctMin", label: "Discount % ≥", value: (r) => Number(r.discount_pct) || 0 },
@@ -25,7 +25,14 @@ export default function SalesByUserTable({ rows }: { rows: SalesByUserRow[] }) {
       filters={filters}
       emptyMessage="No sales data found for this filter."
       totals={(visible) => {
-        const orders = visible.reduce((s, r) => s + (r.total_orders ?? 0), 0);
+        // Each row's own total_orders is exact, but summing across many
+        // store+date+user rows over-counts any order whose lines land on
+        // different days. exactOrderCount (from sales_orders) is precise
+        // for the whole period; use it only when nothing's filtered out,
+        // since it can't describe a narrowed subset.
+        const isFullPeriod = visible.length === rows.length;
+        const summedOrders = visible.reduce((s, r) => s + (r.total_orders ?? 0), 0);
+        const orders = isFullPeriod && exactOrderCount != null ? exactOrderCount : summedOrders;
         const gross = visible.reduce((s, r) => s + (Number(r.gross_sales) || 0), 0);
         const discounts = visible.reduce((s, r) => s + (Number(r.discounts) || 0), 0);
         const net = visible.reduce((s, r) => s + (Number(r.net_sales) || 0), 0);
