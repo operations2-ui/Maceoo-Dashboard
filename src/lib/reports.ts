@@ -12,13 +12,14 @@ export interface NegativeInventoryRow {
   on_hand: number;
 }
 
-export async function getNegativeInventory(storeIds: string[], date: string): Promise<NegativeInventoryRow[]> {
+/** Every SKU's on-hand count for the store(s)/date — not scoped to negative. Negative rows still get flagged in the UI. */
+export async function getCurrentInventory(storeIds: string[], date: string): Promise<NegativeInventoryRow[]> {
   if (storeIds.length === 0) return [];
   const { rows } = await pool.query(
     `select i.store_id, s.name as store_name, i.sku, i.style_code, i.size_code, i.description, i.vendor, i.on_hand
      from inventory_snapshots i
      join stores s on s.id = i.store_id
-     where i.store_id = any($1::uuid[]) and i.snapshot_date = $2 and i.on_hand < 0
+     where i.store_id = any($1::uuid[]) and i.snapshot_date = $2
      order by s.name, i.on_hand asc`,
     [storeIds, date],
   );

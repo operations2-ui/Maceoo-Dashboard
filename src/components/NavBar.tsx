@@ -6,7 +6,7 @@ import NavLinks from "./NavLinks";
 
 const links = [
   { href: "/", label: "Overview" },
-  { href: "/inventory/negative", label: "Negative Inventory" },
+  { href: "/inventory/negative", label: "Current Inventory" },
   { href: "/inventory/sold-negative", label: "Prior-Day Oversell" },
   { href: "/inventory/missing-sizes", label: "Missing Sizes" },
   { href: "/sales", label: "Sales" },

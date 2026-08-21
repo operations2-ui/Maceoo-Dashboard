@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getAccessibleStores } from "@/lib/authz";
-import { getNegativeInventory } from "@/lib/reports";
+import { getCurrentInventory } from "@/lib/reports";
 import { toCsv, csvResponse } from "@/lib/csv-export";
 
 export async function GET(request: Request) {
@@ -17,11 +17,11 @@ export async function GET(request: Request) {
   const allowedIds = stores.map((s) => s.id);
   const storeIds = store && store !== "all" && allowedIds.includes(store) ? [store] : allowedIds;
 
-  const rows = await getNegativeInventory(storeIds, date);
+  const rows = await getCurrentInventory(storeIds, date);
   const csv = toCsv(
     ["Store", "SKU", "Style", "Size", "Description", "Vendor", "On Hand"],
     rows,
     ["store_name", "sku", "style_code", "size_code", "description", "vendor", "on_hand"],
   );
-  return csvResponse(`negative-inventory_${date}.csv`, csv);
+  return csvResponse(`current-inventory_${date}.csv`, csv);
 }
