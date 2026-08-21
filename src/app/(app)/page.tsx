@@ -1,12 +1,13 @@
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getAccessibleStores } from "@/lib/authz";
 import { getSales, getDiscounts, getInventoryAlertSummary, type SalesRow, type DiscountRow } from "@/lib/reports";
+import { StoreDateRangeFilter } from "@/components/FilterForm";
 import StatTile from "@/components/StatTile";
 import SalesByStoreBar from "@/components/SalesByStoreBar";
 import OverviewSalesTrend from "@/components/OverviewSalesTrend";
 import LeagueTable from "@/components/LeagueTable";
 
-const PERIOD_DAYS = 30;
+const DEFAULT_PERIOD_DAYS = 30;
 const dayMs = 86_400_000;
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -27,6 +28,22 @@ function formatDateRange(fromIso: string, toIso: string): string {
   return `${fromLabel} – ${toLabel}`;
 }
 
+/**
+ * Same month/day, `delta` calendar years away — used to get "same period
+ * last year" rather than a fixed -365 days (which would drift across a leap
+ * year). Built entirely from UTC date parts (Date.UTC + setUTCFullYear):
+ * parsing "YYYY-MM-DDT00:00:00" without a zone reads as local time, and
+ * re-serializing via toISOString() converts back through UTC — on a
+ * non-UTC host that silently shifts the result a day. This function never
+ * touches local time at all.
+ */
+function shiftYear(iso: string, delta: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  date.setUTCFullYear(date.getUTCFullYear() + delta);
+  return date.toISOString().slice(0, 10);
+}
+
 function sumSales(rows: SalesRow[]) {
   return rows.reduce(
     (acc, r) => ({
@@ -40,24 +57,34 @@ function sumSales(rows: SalesRow[]) {
 
 const sumDiscounts = (rows: DiscountRow[]) => rows.reduce((sum, r) => sum + Number(r.total_discounts ?? 0), 0);
 
-/** % change vs the previous equal-length period; null when there's no baseline to compare against. */
+/** % change vs the same period last year; null when there's no baseline to compare against. */
 function pctDelta(curr: number, prev: number): number | null {
   if (prev === 0) return null;
   return ((curr - prev) / Math.abs(prev)) * 100;
 }
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ store?: string; from?: string; to?: string }>;
+}) {
+  const { store, from, to } = await searchParams;
   const user = await getCurrentUser();
   const stores = await getAccessibleStores(user);
-  const storeIds = stores.map((s) => s.id);
+  const allowedIds = stores.map((s) => s.id);
+  const storeIds = store && store !== "all" && allowedIds.includes(store) ? [store] : allowedIds;
 
   // Ends at yesterday, not today — today's sync hasn't necessarily run yet,
   // so a "through today" window would silently under-report its own last day.
-  const anchor = new Date(Date.now() - dayMs);
-  const toDate = isoDate(anchor);
-  const fromDate = isoDate(new Date(anchor.getTime() - PERIOD_DAYS * dayMs));
-  const prevToDate = isoDate(new Date(anchor.getTime() - (PERIOD_DAYS + 1) * dayMs));
-  const prevFromDate = isoDate(new Date(anchor.getTime() - PERIOD_DAYS * 2 * dayMs));
+  const yesterday = isoDate(new Date(Date.now() - dayMs));
+  const defaultFrom = isoDate(new Date(Date.now() - (DEFAULT_PERIOD_DAYS + 1) * dayMs));
+  const fromDate = from ?? defaultFrom;
+  const toDate = to ?? yesterday;
+
+  // Same period, one calendar year earlier — more useful for retail
+  // seasonality than the immediately-preceding period would be.
+  const prevFromDate = shiftYear(fromDate, -1);
+  const prevToDate = shiftYear(toDate, -1);
 
   const [salesRows, discountRows, prevSalesRows, prevDiscountRows, alerts] = await Promise.all([
     getSales(storeIds, fromDate, toDate),
@@ -93,15 +120,11 @@ export default async function Home() {
 
   return (
     <div>
-      <div className="flex items-baseline justify-between flex-wrap gap-2 mb-1">
-        <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Overview</h1>
-        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-          {formatDateRange(fromDate, toDate)}
-        </span>
-      </div>
-      <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-        Last {PERIOD_DAYS} days across {stores.length} store{stores.length === 1 ? "" : "s"}.
+      <h1 className="text-xl font-semibold text-slate-900 dark:text-white mb-1">Overview</h1>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+        Compared to the same period last year, {formatDateRange(prevFromDate, prevToDate)}.
       </p>
+      <StoreDateRangeFilter stores={stores} store={store} from={fromDate} to={toDate} />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
         <StatTile
